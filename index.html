@@ -1,0 +1,3188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>НЕОНОВЫЙ ПРОРЫВ: FPS — Киберпанк 3D Роуглайк</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    /* ==========================================================================
+       БАЗОВЫЕ СТИЛИ И КИБЕРПАНК-ТЕМА
+       ========================================================================== */
+    :root {
+      --bg-dark: #040611;
+      --bg-panel: rgba(7, 12, 28, 0.84);
+      --cyan: #00f3ff;
+      --magenta: #ff00aa;
+      --yellow: #fcee0a;
+      --purple: #a855f7;
+      --red: #ff2a55;
+      --green: #00ff88;
+      --text-main: #e6f4ff;
+      --text-dim: #8199ba;
+      --border-glow: rgba(0, 243, 255, 0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+    }
+
+    #viewport {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #viewport canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ==========================================================================
+       ЭКРАННЫЕ ПОСТ-ЭФФЕКТЫ (СКАНЛАЙНЫ, УРОН, ЛИНИИ СКОРОСТИ)
+       ========================================================================== */
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      background:
+        linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%),
+        radial-gradient(circle at center, transparent 58%, rgba(2, 4, 14, 0.62) 100%);
+      background-size: 100% 4px, 100% 100%;
+    }
+
+    #damageVignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 6;
+      opacity: 0;
+      background: radial-gradient(circle at center, transparent 42%, rgba(255, 24, 68, 0.72) 100%);
+      transition: opacity 0.08s ease-out;
+    }
+
+    #speedLines {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 6;
+      opacity: 0;
+      background:
+        repeating-conic-gradient(
+          from 0deg at 50% 50%,
+          rgba(0, 243, 255, 0) 0deg 8deg,
+          rgba(0, 243, 255, 0.16) 8deg 9.2deg,
+          rgba(255, 0, 170, 0.08) 9.2deg 10deg
+        );
+      -webkit-mask-image: radial-gradient(circle at center, transparent 36%, black 82%);
+      mask-image: radial-gradient(circle at center, transparent 36%, black 82%);
+      transition: opacity 0.1s ease-out;
+    }
+
+    /* ==========================================================================
+       ДИНАМИЧЕСКИЙ ПРИЦЕЛ И ХИТМАРКЕР
+       ========================================================================== */
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 12;
+      width: 44px;
+      height: 44px;
+      display: none;
+    }
+
+    #crosshair.visible {
+      display: block;
+    }
+
+    .ch-dot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 4px;
+      height: 4px;
+      margin: -2px 0 0 -2px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    .ch-line {
+      position: absolute;
+      background: rgba(0, 243, 255, 0.9);
+      box-shadow: 0 0 6px rgba(0, 243, 255, 0.8);
+      transition: transform 0.08s ease-out;
+    }
+
+    .ch-top    { width: 2px; height: 9px; left: 21px; top: 5px; }
+    .ch-bottom { width: 2px; height: 9px; left: 21px; bottom: 5px; }
+    .ch-left   { width: 9px; height: 2px; top: 21px; left: 5px; }
+    .ch-right  { width: 9px; height: 2px; top: 21px; right: 5px; }
+
+    #crosshair.firing .ch-top    { transform: translateY(-5px); }
+    #crosshair.firing .ch-bottom { transform: translateY(5px); }
+    #crosshair.firing .ch-left   { transform: translateX(-5px); }
+    #crosshair.firing .ch-right  { transform: translateX(5px); }
+
+    /* Хитмаркер (X при попадании) */
+    #hitmarker {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 0.09s ease-out, transform 0.09s ease-out;
+    }
+
+    #hitmarker.show {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+
+    #hitmarker::before,
+    #hitmarker::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 24px;
+      height: 2.5px;
+      background: var(--red);
+      box-shadow: 0 0 10px var(--red);
+      border-radius: 2px;
+    }
+
+    #hitmarker.crit::before,
+    #hitmarker.crit::after {
+      width: 30px;
+      height: 3px;
+      background: var(--yellow);
+      box-shadow: 0 0 14px var(--yellow);
+    }
+
+    #hitmarker::before { transform: translate(-50%, -50%) rotate(45deg); }
+    #hitmarker::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
+    /* ==========================================================================
+       ИГРОВОЙ HUD
+       ========================================================================== */
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px 20px;
+      transition: opacity 0.25s ease;
+    }
+
+    #hud.hidden {
+      opacity: 0;
+    }
+
+    .hud-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .hud-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-glow);
+      border-radius: 10px;
+      padding: 10px 14px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 18px rgba(0, 243, 255, 0.12), inset 0 0 12px rgba(0, 243, 255, 0.05);
+    }
+
+    .status-panel {
+      min-width: 248px;
+    }
+
+    .bar-group {
+      margin-bottom: 8px;
+    }
+    .bar-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }
+
+    .bar-track {
+      width: 100%;
+      height: 9px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 5px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 100%;
+      border-radius: 4px;
+      transition: width 0.1s ease-out;
+    }
+
+    .bar-hp {
+      background: linear-gradient(90deg, #ff1e56, #ff6384);
+      box-shadow: 0 0 10px rgba(255, 42, 85, 0.7);
+    }
+
+    .bar-shield {
+      background: linear-gradient(90deg, #0095ff, #00f3ff);
+      box-shadow: 0 0 10px rgba(0, 243, 255, 0.7);
+    }
+
+    .bar-dash {
+      background: linear-gradient(90deg, #eab308, #fcee0a);
+      box-shadow: 0 0 10px rgba(252, 238, 10, 0.65);
+    }
+
+    /* Центр: Сектор, Угрозы, Очки и Босс */
+    .center-hud {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .sector-badge {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 8px 22px;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    .stat-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-chip .label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.12em;
+    }
+
+    .stat-chip .value {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-shadow: 0 0 10px rgba(0, 243, 255, 0.55);
+    }
+
+    .stat-chip .value.enemies-val {
+      color: var(--magenta);
+      text-shadow: 0 0 10px rgba(255, 0, 170, 0.55);
+    }
+
+    .stat-chip .value.score-val {
+      color: var(--yellow);
+      text-shadow: 0 0 10px rgba(252, 238, 10, 0.55);
+    }
+
+    #bossBarContainer {
+      width: min(460px, 72vw);
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      border-color: rgba(255, 42, 85, 0.65);
+      box-shadow: 0 0 24px rgba(255, 42, 85, 0.3);
+    }
+
+    #bossBarContainer.visible {
+      display: flex;
+    }
+
+    .boss-title {
+      display: flex;
+      justify-content: space-between;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--red);
+      letter-spacing: 0.1em;
+      text-shadow: 0 0 8px rgba(255, 42, 85, 0.8);
+    }
+
+    .boss-track {
+      height: 13px;
+      background: rgba(255, 42, 85, 0.16);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 42, 85, 0.55);
+    }
+
+    .boss-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #ff0055, #ff00aa, #fcee0a);
+      box-shadow: 0 0 16px rgba(255, 0, 128, 0.85);
+      transition: width 0.08s linear;
+    }
+
+    /* Радар / 2D мини-карта в правом верхнем углу */
+    .radar-panel {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .radar-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--cyan);
+      opacity: 0.85;
+    }
+
+    #radarCanvas {
+      width: 152px;
+      height: 152px;
+      border-radius: 8px;
+      background: rgba(4, 8, 20, 0.92);
+      border: 1px solid rgba(0, 243, 255, 0.35);
+      display: block;
+    }
+
+    /* Нижняя панель: установленные импланты и подсказка захвата курсора */
+    .hud-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    #implantsBar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 55vw;
+    }
+
+    .implant-chip {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba(10, 16, 36, 0.88);
+      border: 1px solid var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      box-shadow: 0 0 10px rgba(0, 243, 255, 0.25);
+    }
+
+    .implant-chip .stack-count {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      background: var(--yellow);
+      color: #050711;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 0 4px;
+      border-radius: 4px;
+      line-height: 14px;
+    }
+
+    .lock-hint {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      background: rgba(6, 10, 24, 0.78);
+      border: 1px solid rgba(0, 243, 255, 0.22);
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
+    /* Всплывающее оповещение */
+    #bannerNotice {
+      position: fixed;
+      top: 104px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      background: rgba(5, 11, 26, 0.92);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 10px 24px;
+      border-radius: 8px;
+      box-shadow: 0 0 24px rgba(0, 243, 255, 0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.28s ease;
+      z-index: 15;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    #bannerNotice.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ==========================================================================
+       МОДАЛЬНЫЕ ОКНА (СТАРТ, ИМПЛАНТЫ, ПАУЗА, GAME OVER)
+       ========================================================================== */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      background: rgba(4, 6, 16, 0.82);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background: linear-gradient(160deg, rgba(10, 16, 38, 0.96), rgba(5, 8, 22, 0.98));
+      border: 1px solid rgba(0, 243, 255, 0.45);
+      border-radius: 16px;
+      padding: 30px 34px;
+      max-width: 720px;
+      width: 100%;
+      text-align: center;
+      box-shadow:
+        0 0 42px rgba(0, 243, 255, 0.18),
+        0 0 80px rgba(255, 0, 170, 0.08),
+        inset 0 0 24px rgba(0, 243, 255, 0.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .modal-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--yellow));
+    }
+
+    .game-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(26px, 4.6vw, 44px);
+      font-weight: 900;
+      letter-spacing: 0.07em;
+      background: linear-gradient(90deg, #00f3ff, #ffffff, #ff00aa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 18px rgba(0, 243, 255, 0.5));
+      margin-bottom: 4px;
+    }
+
+    .game-subtitle {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.28em;
+      color: var(--magenta);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+      text-shadow: 0 0 10px rgba(255, 0, 170, 0.6);
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 10px;
+      margin: 18px 0 22px;
+      text-align: left;
+    }
+
+    .ctrl-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(0, 243, 255, 0.2);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .ctrl-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--yellow);
+    }
+
+    .ctrl-desc {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .record-box {
+      display: inline-flex;
+      gap: 20px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      background: rgba(252, 238, 10, 0.08);
+      border: 1px solid rgba(252, 238, 10, 0.35);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--yellow);
+      margin-bottom: 22px;
+    }
+
+    .cyber-btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 14px 32px;
+      border-radius: 10px;
+      border: 1px solid var(--cyan);
+      background: linear-gradient(135deg, rgba(0, 243, 255, 0.22), rgba(255, 0, 170, 0.22));
+      color: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(0, 243, 255, 0.35);
+      transition: all 0.18s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .cyber-btn:hover {
+      transform: translateY(-2px) scale(1.02);
+      background: linear-gradient(135deg, rgba(0, 243, 255, 0.42), rgba(255, 0, 170, 0.38));
+      box-shadow: 0 0 32px rgba(0, 243, 255, 0.65);
+    }
+
+    .cyber-btn.secondary {
+      border-color: rgba(129, 153, 186, 0.5);
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: none;
+    }
+
+    .cyber-btn.secondary:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 243, 255, 0.14);
+    }
+
+    .cyber-btn.danger {
+      border-color: var(--red);
+      background: linear-gradient(135deg, rgba(255, 42, 85, 0.25), rgba(255, 0, 170, 0.2));
+      box-shadow: 0 0 22px rgba(255, 42, 85, 0.35);
+    }
+
+    .cyber-btn.danger:hover {
+      background: linear-gradient(135deg, rgba(255, 42, 85, 0.45), rgba(255, 0, 170, 0.35));
+      box-shadow: 0 0 32px rgba(255, 42, 85, 0.65);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* Карточки имплантов */
+    .implants-modal {
+      max-width: 940px;
+    }
+
+    .implants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .implant-card {
+      background: linear-gradient(180deg, rgba(14, 22, 48, 0.95), rgba(7, 11, 26, 0.98));
+      border: 1px solid rgba(0, 243, 255, 0.35);
+      border-radius: 14px;
+      padding: 20px 18px;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      position: relative;
+    }
+
+    .implant-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 24px var(--card-glow, rgba(0, 243, 255, 0.5));
+      border-color: var(--card-color, var(--cyan));
+    }
+
+    .implant-card .hotkey-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-color, var(--cyan));
+      color: var(--card-color, var(--cyan));
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .implant-card .rarity-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--card-color, var(--cyan));
+    }
+
+    .implant-card .implant-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-color, var(--cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 25px;
+      box-shadow: inset 0 0 14px var(--card-glow, rgba(0, 243, 255, 0.25));
+    }
+
+    .implant-card .implant-name {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .implant-card .implant-desc {
+      font-size: 14px;
+      line-height: 1.4;
+      color: #b7cae3;
+      flex: 1;
+    }
+
+    .implant-card .implant-cta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--card-color, var(--cyan));
+      margin-top: 4px;
+    }
+
+    /* Статистика на экране Game Over */
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin: 20px 0 24px;
+    }
+
+    .summary-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .summary-box .s-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .summary-box .s-val {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--cyan);
+      margin-top: 4px;
+    }
+
+    @media (max-width: 760px) {
+      #hud { padding: 10px 12px; }
+      .status-panel { min-width: 175px; }
+      #radarCanvas { width: 110px; height: 110px; }
+      .sector-badge { padding: 6px 12px; gap: 12px; }
+      .modal-card { padding: 22px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Контейнер Three.js -->
+  <div id="viewport"></div>
+
+  <!-- Пост-эффекты -->
+  <div class="scanlines"></div>
+  <div id="damageVignette"></div>
+  <div id="speedLines"></div>
+
+  <!-- Динамический прицел и хитмаркер -->
+  <div id="crosshair">
+    <div class="ch-dot"></div>
+    <div class="ch-line ch-top"></div>
+    <div class="ch-line ch-bottom"></div>
+    <div class="ch-line ch-left"></div>
+    <div class="ch-line ch-right"></div>
+    <div id="hitmarker"></div>
+  </div>
+
+  <!-- Всплывающий баннер -->
+  <div id="bannerNotice">СЕКТОР ЗАЧИЩЕН — ПОРТАЛ АКТИВИРОВАН</div>
+
+  <!-- Игровой HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <!-- Левая панель: HP, Щит, Рывок -->
+      <div class="hud-panel status-panel">
+        <div class="bar-group">
+          <div class="bar-label">
+            <span style="color: var(--red);">♥ БИО-ЦЕЛОСТНОСТЬ</span>
+            <span id="hpText">100 / 100</span>
+          </div>
+          <div class="bar-track">
+            <div id="hpFill" class="bar-fill bar-hp"></div>
+          </div>
+        </div>
+        <div class="bar-group" id="shieldBarGroup" style="display: none;">
+          <div class="bar-label">
+            <span style="color: var(--cyan);">◈ ЭНЕРГОЩИТ</span>
+            <span id="shieldText">0 / 0</span>
+          </div>
+          <div class="bar-track">
+            <div id="shieldFill" class="bar-fill bar-shield"></div>
+          </div>
+        </div>
+        <div class="bar-group">
+          <div class="bar-label">
+            <span style="color: var(--yellow);">⚡ КИБЕР-РЫВОК</span>
+            <span id="dashText">ГОТОВ</span>
+          </div>
+          <div class="bar-track">
+            <div id="dashFill" class="bar-fill bar-dash"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Центр: Сектор, Враги, Очки + Полоса Босса -->
+      <div class="center-hud">
+        <div class="hud-panel sector-badge">
+          <div class="stat-chip">
+            <span class="label">СЕКТОР</span>
+            <span id="sectorVal" class="value">01</span>
+          </div>
+          <div class="stat-chip">
+            <span class="label">УГРОЗЫ</span>
+            <span id="enemiesVal" class="value enemies-val">0</span>
+          </div>
+          <div class="stat-chip">
+            <span class="label">ДАННЫЕ</span>
+            <span id="scoreVal" class="value score-val">0</span>
+          </div>
+        </div>
+
+        <div id="bossBarContainer" class="hud-panel">
+          <div class="boss-title">
+            <span id="bossName">БОСС «НЕЙРО-СТРАЖ»</span>
+            <span id="bossHpText">100%</span>
+          </div>
+          <div class="boss-track">
+            <div id="bossHpFill" class="boss-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Правый верхний угол: 2D Радар / Мини-карта -->
+      <div class="hud-panel radar-panel">
+        <div class="radar-title">РАДАР СЕКТОРА</div>
+        <canvas id="radarCanvas" width="152" height="152"></canvas>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div id="implantsBar"></div>
+      <div id="lockHint" class="lock-hint">КЛИК — ЗАХВАТ МЫШИ • ESC — ПАУЗА • M — ЗВУК</div>
+    </div>
+  </div>
+
+  <!-- СТАРТОВЫЙ ЭКРАН -->
+  <div id="startOverlay" class="overlay active">
+    <div class="modal-card">
+      <h1 class="game-title">НЕОНОВЫЙ ПРОРЫВ: FPS</h1>
+      <div class="game-subtitle">NEON BREACH // 3D CYBERPUNK ROGUELIKE</div>
+      <p style="color: #b7cae3; font-size: 15px; line-height: 1.5;">
+        Погрузитесь в трёхмерные защитные сектора мегакорпорации от первого лица.
+        Уничтожайте кибер-дронов, снайперов и Босса «НЕЙРО-СТРАЖ», собирайте импланты и ставьте новые рекорды.
+      </p>
+
+      <div class="controls-grid">
+        <div class="ctrl-item">
+          <span class="ctrl-key">W A S D</span>
+          <span class="ctrl-desc">Передвижение по арене</span>
+        </div>
+        <div class="ctrl-item">
+          <span class="ctrl-key">МЫШЬ / ← →</span>
+          <span class="ctrl-desc">Обзор 360° (Pointer Lock)</span>
+        </div>
+        <div class="ctrl-item">
+          <span class="ctrl-key">ЛКМ (УДЕРЖ.)</span>
+          <span class="ctrl-desc">Автоматический плазменный огонь</span>
+        </div>
+        <div class="ctrl-item">
+          <span class="ctrl-key">SHIFT / ПРОБЕЛ</span>
+          <span class="ctrl-desc">Кибер-рывок (неуязвимость 0.25с)</span>
+        </div>
+        <div class="ctrl-item">
+          <span class="ctrl-key">КЛАВИШИ 1, 2, 3</span>
+          <span class="ctrl-desc">Быстрый выбор импланта</span>
+        </div>
+        <div class="ctrl-item">
+          <span class="ctrl-key">ESC / M</span>
+          <span class="ctrl-desc">Пауза / Вкл-выкл звук</span>
+        </div>
+      </div>
+
+      <div class="record-box">
+        <span>🏆 РЕКОРД: <strong id="bestScoreDisplay">0</strong></span>
+        <span>⬡ МАКС. СЕКТОР: <strong id="bestSectorDisplay">0</strong></span>
+      </div>
+
+      <div class="btn-row">
+        <button id="startBtn" class="cyber-btn">▶ НАЧАТЬ ВЗЛОМ</button>
+        <button id="startMuteBtn" class="cyber-btn secondary">🔊 ЗВУК: ВКЛ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ЭКРАН ВЫБОРА КИБЕР-ИМПЛАНТА -->
+  <div id="implantOverlay" class="overlay">
+    <div class="modal-card implants-modal">
+      <div class="game-subtitle" style="margin-bottom: 6px;">СЕКТОР ЗАЧИЩЕН // ТЕРМИНАЛ МОДИФИКАЦИИ</div>
+      <h2 class="game-title" style="font-size: clamp(22px, 3.4vw, 32px);">ВЫБЕРИТЕ КИБЕР-ИМПЛАНТ</h2>
+      <p style="color: var(--text-dim); font-size: 14px;">
+        Кликните по карточке или нажмите клавишу <strong style="color: var(--yellow);">1, 2 или 3</strong> для установки модуля.
+      </p>
+      <div id="implantsGrid" class="implants-grid"></div>
+    </div>
+  </div>
+
+  <!-- ЭКРАН ПАУЗЫ -->
+  <div id="pauseOverlay" class="overlay">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="game-subtitle" style="margin-bottom: 6px;">НЕЙРОСВЯЗЬ ПРИОСТАНОВЛЕНА</div>
+      <h2 class="game-title" style="font-size: 32px; margin-bottom: 24px;">ПАУЗА</h2>
+      <div class="btn-row" style="flex-direction: column;">
+        <button id="resumeBtn" class="cyber-btn">▶ ПРОДОЛЖИТЬ</button>
+        <button id="pauseMuteBtn" class="cyber-btn secondary">🔊 ЗВУК: ВКЛ</button>
+        <button id="pauseRestartBtn" class="cyber-btn danger">↻ НАЧАТЬ ЗАНОВО</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ЭКРАН GAME OVER -->
+  <div id="gameOverOverlay" class="overlay">
+    <div class="modal-card" style="max-width: 540px; border-color: rgba(255, 42, 85, 0.55);">
+      <div class="game-subtitle" style="color: var(--red); margin-bottom: 6px;">КРИТИЧЕСКИЙ СБОЙ СИСТЕМЫ</div>
+      <h2 class="game-title" style="font-size: clamp(26px, 4.4vw, 36px); background: linear-gradient(90deg, #ff2a55, #ff88aa, #fcee0a); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        ПОДКЛЮЧЕНИЕ ПРЕРВАНО
+      </h2>
+
+      <div class="stats-summary">
+        <div class="summary-box">
+          <div class="s-label">ПРОЙДЕНО СЕКТОРОВ</div>
+          <div id="goSectors" class="s-val">0</div>
+        </div>
+        <div class="summary-box">
+          <div class="s-label">УНИЧТОЖЕНО ВРАГОВ</div>
+          <div id="goKills" class="s-val" style="color: var(--magenta);">0</div>
+        </div>
+        <div class="summary-box">
+          <div class="s-label">ОЧКИ ДАННЫХ</div>
+          <div id="goScore" class="s-val" style="color: var(--yellow);">0</div>
+        </div>
+        <div class="summary-box">
+          <div class="s-label">ЛУЧШИЙ РЕКОРД</div>
+          <div id="goBest" class="s-val" style="color: var(--green);">0</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="restartBtn" class="cyber-btn">↻ ПЕРЕЗАГРУЗИТЬ</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* ==========================================================================
+         1. ЗВУКОВОЙ СИНТЕЗАТОР (WEB AUDIO API)
+         ========================================================================== */
+      class CyberAudio {
+        constructor() {
+          this.ctx = null;
+          this.muted = false;
+        }
+
+        init() {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) this.ctx = new AudioCtx();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+        }
+
+        toggleMute() {
+          this.muted = !this.muted;
+          return this.muted;
+        }
+
+        playTone({ freq = 440, endFreq = null, type = 'sawtooth', duration = 0.12, volume = 0.12, delay = 0 }) {
+          if (this.muted || !this.ctx) return;
+          try {
+            const now = this.ctx.currentTime + delay;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, now);
+            if (endFreq !== null) {
+              osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), now + duration);
+            }
+            gain.gain.setValueAtTime(volume, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + duration + 0.02);
+          } catch (_) {}
+        }
+
+        playNoise({ duration = 0.2, volume = 0.14, filterFreq = 900, endFreq = 120 }) {
+          if (this.muted || !this.ctx) return;
+          try {
+            const now = this.ctx.currentTime;
+            const bufferSize = Math.floor(this.ctx.sampleRate * duration);
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+            const src = this.ctx.createBufferSource();
+            src.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(filterFreq, now);
+            filter.frequency.exponentialRampToValueAtTime(Math.max(40, endFreq), now + duration);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(volume, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+            src.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            src.start(now);
+          } catch (_) {}
+        }
+
+        shoot() {
+          const base = 740 + Math.random() * 140;
+          this.playTone({ freq: base, endFreq: 160, type: 'sawtooth', duration: 0.085, volume: 0.08 });
+          this.playTone({ freq: base * 1.4, endFreq: 310, type: 'triangle', duration: 0.055, volume: 0.05 });
+        }
+
+        hitmarker(crit = false) {
+          if (crit) {
+            this.playTone({ freq: 1320, endFreq: 1760, type: 'triangle', duration: 0.08, volume: 0.1 });
+            this.playTone({ freq: 880, endFreq: 1320, type: 'sine', duration: 0.07, volume: 0.08, delay: 0.03 });
+          } else {
+            this.playTone({ freq: 920, endFreq: 520, type: 'triangle', duration: 0.045, volume: 0.07 });
+          }
+        }
+
+        enemyShoot() {
+          this.playTone({ freq: 320, endFreq: 110, type: 'square', duration: 0.09, volume: 0.05 });
+        }
+
+        sniperShoot() {
+          this.playTone({ freq: 1480, endFreq: 140, type: 'sawtooth', duration: 0.24, volume: 0.12 });
+          this.playNoise({ duration: 0.14, volume: 0.08, filterFreq: 2400, endFreq: 350 });
+        }
+
+        dash() {
+          this.playTone({ freq: 220, endFreq: 860, type: 'sine', duration: 0.18, volume: 0.11 });
+          this.playNoise({ duration: 0.18, volume: 0.08, filterFreq: 2100, endFreq: 280 });
+        }
+
+        explosion(big = false) {
+          this.playNoise({
+            duration: big ? 0.6 : 0.26,
+            volume: big ? 0.22 : 0.14,
+            filterFreq: big ? 1300 : 950,
+            endFreq: 55
+          });
+          this.playTone({
+            freq: big ? 135 : 190,
+            endFreq: 32,
+            type: 'sine',
+            duration: big ? 0.55 : 0.24,
+            volume: big ? 0.2 : 0.12
+          });
+        }
+
+        playerHurt(shielded) {
+          if (shielded) {
+            this.playTone({ freq: 640, endFreq: 240, type: 'sine', duration: 0.16, volume: 0.12 });
+          } else {
+            this.playTone({ freq: 155, endFreq: 42, type: 'sawtooth', duration: 0.24, volume: 0.16 });
+            this.playNoise({ duration: 0.16, volume: 0.12, filterFreq: 700, endFreq: 95 });
+          }
+        }
+
+        portalOpen() {
+          this.playTone({ freq: 220, endFreq: 440, type: 'sine', duration: 0.25, volume: 0.1 });
+          this.playTone({ freq: 330, endFreq: 660, type: 'triangle', duration: 0.3, volume: 0.09, delay: 0.1 });
+          this.playTone({ freq: 440, endFreq: 880, type: 'sine', duration: 0.35, volume: 0.09, delay: 0.2 });
+        }
+
+        implantSelect() {
+          this.playTone({ freq: 440, endFreq: 554, type: 'triangle', duration: 0.1, volume: 0.1 });
+          this.playTone({ freq: 554, endFreq: 659, type: 'triangle', duration: 0.1, volume: 0.1, delay: 0.08 });
+          this.playTone({ freq: 659, endFreq: 880, type: 'sine', duration: 0.22, volume: 0.12, delay: 0.16 });
+        }
+
+        bossWarning() {
+          for (let i = 0; i < 3; i++) {
+            this.playTone({ freq: 170, endFreq: 110, type: 'sawtooth', duration: 0.19, volume: 0.12, delay: i * 0.22 });
+          }
+        }
+      }
+
+      const audio = new CyberAudio();
+
+      /* ==========================================================================
+         2. КАТАЛОГ КИБЕР-ИМПЛАНТОВ (11 КОМБИНИРУЕМЫХ МОДУЛЕЙ)
+         ========================================================================== */
+      const RARITY = {
+        common: { label: 'ОБЫЧНЫЙ', color: '#00f3ff', glow: 'rgba(0, 243, 255, 0.45)', weight: 52 },
+        rare:   { label: 'РЕДКИЙ', color: '#a855f7', glow: 'rgba(168, 85, 247, 0.5)', weight: 32 },
+        epic:   { label: 'ЭПИЧЕСКИЙ', color: '#ff00aa', glow: 'rgba(255, 0, 170, 0.55)', weight: 16 }
+      };
+
+      const IMPLANTS = [
+        {
+          id: 'impulse_accel',
+          name: 'Ускоритель импульса',
+          icon: '⚡',
+          rarity: 'common',
+          desc: '+25% к скорострельности плазменной винтовки.',
+          apply: (p) => { p.fireRateMult *= 1.25; }
+        },
+        {
+          id: 'plasma_core',
+          name: 'Плазменный сердечник',
+          icon: '☢️',
+          rarity: 'common',
+          desc: '+30% к базовому урону всех выстрелов.',
+          apply: (p) => { p.damageMult *= 1.3; }
+        },
+        {
+          id: 'beam_splitter',
+          name: 'Разветвитель луча',
+          icon: '🔱',
+          rarity: 'epic',
+          desc: '+1 дополнительный плазменный снаряд веером за выстрел.',
+          apply: (p) => { p.multishot += 1; }
+        },
+        {
+          id: 'crit_optics',
+          name: 'Критический оптик',
+          icon: '🎯',
+          rarity: 'rare',
+          desc: '+15% шанс критического попадания (урон x2).',
+          apply: (p) => { p.critChance = Math.min(0.85, p.critChance + 0.15); }
+        },
+        {
+          id: 'nano_armor',
+          name: 'Нано-броня',
+          icon: '💉',
+          rarity: 'common',
+          desc: '+30 к максимальному здоровью и мгновенное восстановление HP.',
+          apply: (p) => {
+            p.maxHp += 30;
+            p.hp = p.maxHp;
+          }
+        },
+        {
+          id: 'energy_shield',
+          name: 'Энергощит',
+          icon: '🛡️',
+          rarity: 'rare',
+          desc: '+45 к регенерирующему энергощиту (восстанавливается вне боя).',
+          apply: (p) => {
+            p.maxShield += 45;
+            p.shield = p.maxShield;
+          }
+        },
+        {
+          id: 'quantum_dash',
+          name: 'Квантовый рывок',
+          icon: '🌀',
+          rarity: 'common',
+          desc: '-25% ко времени перезарядки кибер-рывка.',
+          apply: (p) => { p.dashCooldownMult *= 0.75; }
+        },
+        {
+          id: 'data_vamp',
+          name: 'Вампиризм данных',
+          icon: '🩸',
+          rarity: 'rare',
+          desc: 'Восстанавливает +5 HP за каждого уничтоженного врага.',
+          apply: (p) => { p.vampHeal += 5; }
+        },
+        {
+          id: 'explosive_rounds',
+          name: 'Взрывные снаряды',
+          icon: '💥',
+          rarity: 'epic',
+          desc: 'Снаряды взрываются при попадании, нанося урон по области.',
+          apply: (p) => { p.explosiveLevel += 1; }
+        },
+        {
+          id: 'cyber_speed',
+          name: 'Кибер-ускорение',
+          icon: '💨',
+          rarity: 'common',
+          desc: '+18% к скорости передвижения по арене.',
+          apply: (p) => { p.speedMult *= 1.18; }
+        },
+        {
+          id: 'pierce_rounds',
+          name: 'Пробивные заряды',
+          icon: '☄️',
+          rarity: 'epic',
+          desc: 'Плазменные снаряды пробивают врагов насквозь (+1 пробитие).',
+          apply: (p) => { p.pierce += 1; }
+        }
+      ];
+
+      /* ==========================================================================
+         3. КОНСТАНТЫ, DOM И СОСТОЯНИЕ ИГРЫ
+         ========================================================================== */
+      const ARENA_SIZE = 84;          // Арена от -42 до +42 по X и Z
+      const ARENA_HALF = ARENA_SIZE / 2;
+      const WALL_HEIGHT = 11;
+      const EYE_HEIGHT = 2.0;
+      const BASE_FOV = 76;
+      const DASH_FOV = 95;
+      const STORAGE_KEY = 'neon_breach_fps_records_v1';
+
+      const ui = {
+        viewport: document.getElementById('viewport'),
+        hud: document.getElementById('hud'),
+        crosshair: document.getElementById('crosshair'),
+        hitmarker: document.getElementById('hitmarker'),
+        damageVignette: document.getElementById('damageVignette'),
+        speedLines: document.getElementById('speedLines'),
+        bannerNotice: document.getElementById('bannerNotice'),
+        hpText: document.getElementById('hpText'),
+        hpFill: document.getElementById('hpFill'),
+        shieldBarGroup: document.getElementById('shieldBarGroup'),
+        shieldText: document.getElementById('shieldText'),
+        shieldFill: document.getElementById('shieldFill'),
+        dashText: document.getElementById('dashText'),
+        dashFill: document.getElementById('dashFill'),
+        sectorVal: document.getElementById('sectorVal'),
+        enemiesVal: document.getElementById('enemiesVal'),
+        scoreVal: document.getElementById('scoreVal'),
+        bossBarContainer: document.getElementById('bossBarContainer'),
+        bossName: document.getElementById('bossName'),
+        bossHpText: document.getElementById('bossHpText'),
+        bossHpFill: document.getElementById('bossHpFill'),
+        implantsBar: document.getElementById('implantsBar'),
+        lockHint: document.getElementById('lockHint'),
+        radarCanvas: document.getElementById('radarCanvas'),
+        startOverlay: document.getElementById('startOverlay'),
+        implantOverlay: document.getElementById('implantOverlay'),
+        implantsGrid: document.getElementById('implantsGrid'),
+        pauseOverlay: document.getElementById('pauseOverlay'),
+        gameOverOverlay: document.getElementById('gameOverOverlay'),
+        bestScoreDisplay: document.getElementById('bestScoreDisplay'),
+        bestSectorDisplay: document.getElementById('bestSectorDisplay'),
+        goSectors: document.getElementById('goSectors'),
+        goKills: document.getElementById('goKills'),
+        goScore: document.getElementById('goScore'),
+        goBest: document.getElementById('goBest'),
+        startMuteBtn: document.getElementById('startMuteBtn'),
+        pauseMuteBtn: document.getElementById('pauseMuteBtn')
+      };
+
+      const radarCtx = ui.radarCanvas.getContext('2d');
+
+      const input = {
+        keys: {},
+        mouseDown: false,
+        pointerLocked: false,
+        draggingLook: false,
+        lastMouseX: 0,
+        lastMouseY: 0
+      };
+
+      const state = {
+        mode: 'menu', // 'menu' | 'playing' | 'implant' | 'paused' | 'gameover'
+        sector: 1,
+        score: 0,
+        kills: 0,
+        time: 0,
+        bannerTimer: 0,
+        hitmarkerTimer: 0,
+        damageFlash: 0,
+        cameraShake: 0,
+        currentChoices: [], // Текущие 3 импланта для выбора клавишами 1/2/3
+        records: { bestScore: 0, bestSector: 0 },
+        player: null,
+        obstacles: [],      // { x, z, hw, hd, h, color, mesh }
+        enemies: [],
+        bullets: [],
+        particles: [],
+        portal: null        // { x, z, radius, group, ring1, ring2, light }
+      };
+
+      /* ==========================================================================
+         4. ИНИЦИАЛИЗАЦИЯ THREE.JS (СЦЕНА, КАМЕРА, ОСВЕЩЕНИЕ, АРЕНА, ОРУЖИЕ)
+         ========================================================================== */
+      let scene, camera, renderer;
+      let sectorGroup, fxGroup;
+      let weaponGroup, muzzleFlashMesh, muzzleLight;
+      let weaponRecoil = 0;
+      let weaponBobTime = 0;
+
+      // Общие геометрии для производительности
+      const sharedGeo = {
+        playerBullet: new THREE.SphereGeometry(0.22, 8, 8),
+        enemyBullet: new THREE.SphereGeometry(0.32, 8, 8),
+        particle: new THREE.BoxGeometry(0.24, 0.24, 0.24)
+      };
+
+      function createGridTexture() {
+        const size = 512;
+        const c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const g = c.getContext('2d');
+
+        // Тёмный пол
+        g.fillStyle = '#060a18';
+        g.fillRect(0, 0, size, size);
+
+        // Тонкая подсетка
+        g.strokeStyle = 'rgba(0, 243, 255, 0.11)';
+        g.lineWidth = 2;
+        const step = size / 4;
+        for (let i = 0; i <= size; i += step) {
+          g.beginPath(); g.moveTo(i, 0); g.lineTo(i, size); g.stroke();
+          g.beginPath(); g.moveTo(0, i); g.lineTo(size, i); g.stroke();
+        }
+
+        // Яркая главная неоновая линия
+        g.strokeStyle = 'rgba(0, 243, 255, 0.42)';
+        g.lineWidth = 4;
+        g.strokeRect(2, 2, size - 4, size - 4);
+
+        // Маленький неоновый акцент в углу ячейки
+        g.fillStyle = 'rgba(255, 0, 170, 0.45)';
+        g.fillRect(0, 0, 10, 10);
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(ARENA_SIZE / 4, ARENA_SIZE / 4);
+        tex.anisotropy = 8;
+        return tex;
+      }
+
+      function createWallTexture() {
+        const w = 512;
+        const h = 256;
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const g = c.getContext('2d');
+
+        g.fillStyle = '#070b1a';
+        g.fillRect(0, 0, w, h);
+
+        // Вертикальные панели
+        g.strokeStyle = 'rgba(0, 243, 255, 0.14)';
+        g.lineWidth = 2;
+        for (let x = 0; x <= w; x += 64) {
+          g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+        }
+
+        // Голографические неоновые полосы
+        g.fillStyle = '#00f3ff';
+        g.fillRect(0, 48, w, 5);
+        g.fillStyle = 'rgba(0, 243, 255, 0.22)';
+        g.fillRect(0, 42, w, 17);
+
+        g.fillStyle = '#ff00aa';
+        g.fillRect(0, 184, w, 6);
+        g.fillStyle = 'rgba(255, 0, 170, 0.2)';
+        g.fillRect(0, 178, w, 18);
+
+        // Диагональные предупреждающие штрихи внизу
+        g.fillStyle = 'rgba(252, 238, 10, 0.25)';
+        for (let x = 0; x < w; x += 48) {
+          g.fillRect(x, h - 18, 22, 10);
+        }
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.repeat.set(ARENA_SIZE / 14, 1);
+        return tex;
+      }
+
+      function initThree() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x040611);
+        scene.fog = new THREE.FogExp2(0x040614, 0.0155);
+
+        camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 180);
+        camera.rotation.order = 'YXZ';
+        scene.add(camera); // Обязательно для отображения дочерней 3D-модели оружия
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        ui.viewport.appendChild(renderer.domElement);
+
+        // Освещение арены
+        const ambient = new THREE.AmbientLight(0x3a4d80, 0.9);
+        scene.add(ambient);
+
+        const hemi = new THREE.HemisphereLight(0x00f3ff, 0x220833, 0.85);
+        scene.add(hemi);
+
+        const dirLight = new THREE.DirectionalLight(0xd8ecff, 0.65);
+        dirLight.position.set(18, 35, 14);
+        scene.add(dirLight);
+
+        // Пол с процедурной сеткой
+        const floorGeo = new THREE.PlaneGeometry(ARENA_SIZE, ARENA_SIZE);
+        const floorMat = new THREE.MeshStandardMaterial({
+          map: createGridTexture(),
+          roughness: 0.45,
+          metalness: 0.35
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Неоновый потолочный каркас (высоко над ареной для масштаба)
+        const skyRingGeo = new THREE.RingGeometry(24, 24.8, 48);
+        const skyRingMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff, side: THREE.DoubleSide, transparent: true, opacity: 0.25 });
+        const skyRing = new THREE.Mesh(skyRingGeo, skyRingMat);
+        skyRing.rotation.x = Math.PI / 2;
+        skyRing.position.y = WALL_HEIGHT + 8;
+        scene.add(skyRing);
+
+        // Периметр стен арены с голографическими полосами
+        const wallTex = createWallTexture();
+        const wallMat = new THREE.MeshStandardMaterial({
+          map: wallTex,
+          roughness: 0.5,
+          metalness: 0.4,
+          emissive: 0x050c20,
+          emissiveIntensity: 0.6
+        });
+
+        const wallConfigs = [
+          { x: 0, z: -ARENA_HALF, rotY: 0 },
+          { x: 0, z: ARENA_HALF, rotY: Math.PI },
+          { x: -ARENA_HALF, z: 0, rotY: Math.PI / 2 },
+          { x: ARENA_HALF, z: 0, rotY: -Math.PI / 2 }
+        ];
+        const wallGeo = new THREE.PlaneGeometry(ARENA_SIZE, WALL_HEIGHT);
+        for (const wc of wallConfigs) {
+          const wall = new THREE.Mesh(wallGeo, wallMat);
+          wall.position.set(wc.x, WALL_HEIGHT / 2, wc.z);
+          wall.rotation.y = wc.rotY;
+          scene.add(wall);
+        }
+
+        // Группы для динамических объектов сектора и эффектов
+        sectorGroup = new THREE.Group();
+        scene.add(sectorGroup);
+
+        fxGroup = new THREE.Group();
+        scene.add(fxGroup);
+
+        // Построение 3D-модели киберпанк-оружия
+        buildWeaponModel();
+      }
+
+      function buildWeaponModel() {
+        weaponGroup = new THREE.Group();
+        // Позиция в правой нижней части экрана относительно камеры
+        weaponGroup.position.set(0.36, -0.31, -0.62);
+
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: 0x141b30,
+          roughness: 0.35,
+          metalness: 0.78
+        });
+        const darkMat = new THREE.MeshStandardMaterial({
+          color: 0x090d1a,
+          roughness: 0.5,
+          metalness: 0.65
+        });
+        const cyanGlow = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+        const magGlow = new THREE.MeshBasicMaterial({ color: 0xff00aa });
+
+        // Основной корпус
+        const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.58), bodyMat);
+        weaponGroup.add(receiver);
+
+        // Верхняя и нижняя рельсы ствола
+        const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, 0.42), darkMat);
+        topRail.position.set(0, 0.065, -0.36);
+        weaponGroup.add(topRail);
+
+        const botRail = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.04, 0.38), darkMat);
+        botRail.position.set(0, -0.055, -0.34);
+        weaponGroup.add(botRail);
+
+        // Светящееся плазменное ядро между рельсами
+        const coreBar = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.42), cyanGlow);
+        coreBar.position.set(0, 0.01, -0.32);
+        weaponGroup.add(coreBar);
+
+        // Боковые неоновые полосы
+        const stripGeo = new THREE.BoxGeometry(0.148, 0.016, 0.38);
+        const sideStrip = new THREE.Mesh(stripGeo, magGlow);
+        sideStrip.position.set(0, 0.025, -0.02);
+        weaponGroup.add(sideStrip);
+
+        // Голографический прицел сверху
+        const sightFrame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.055, 0.03), darkMat);
+        sightFrame.position.set(0, 0.11, -0.04);
+        weaponGroup.add(sightFrame);
+
+        const sightDot = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.008, 0.01), cyanGlow);
+        sightDot.position.set(0, 0.115, -0.04);
+        weaponGroup.add(sightDot);
+
+        // Дульная вспышка
+        const flashMat = new THREE.MeshBasicMaterial({
+          color: 0x7df9ff,
+          transparent: true,
+          opacity: 0
+        });
+        muzzleFlashMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.12, 0), flashMat);
+        muzzleFlashMesh.position.set(0, 0.01, -0.62);
+        weaponGroup.add(muzzleFlashMesh);
+
+        // Динамический свет при выстреле
+        muzzleLight = new THREE.PointLight(0x00f3ff, 0, 12);
+        muzzleLight.position.set(0, 0.05, -0.7);
+        weaponGroup.add(muzzleLight);
+
+        camera.add(weaponGroup);
+      }
+
+      /* ==========================================================================
+         5. УТИЛИТЫ И ФИЗИКА СТОЛКНОВЕНИЙ
+         ========================================================================== */
+      function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+      function rand(min, max) { return Math.random() * (max - min) + min; }
+      function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+      function distXZ(x1, z1, x2, z2) { return Math.hypot(x2 - x1, z2 - z1); }
+
+      function loadRecords() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            state.records.bestScore = Number(parsed.bestScore) || 0;
+            state.records.bestSector = Number(parsed.bestSector) || 0;
+          }
+        } catch (_) {}
+        ui.bestScoreDisplay.textContent = state.records.bestScore;
+        ui.bestSectorDisplay.textContent = state.records.bestSector;
+      }
+
+      function saveRecords() {
+        if (state.score > state.records.bestScore) state.records.bestScore = Math.floor(state.score);
+        if (state.sector > state.records.bestSector) state.records.bestSector = state.sector;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+        } catch (_) {}
+        ui.bestScoreDisplay.textContent = state.records.bestScore;
+        ui.bestSectorDisplay.textContent = state.records.bestSector;
+      }
+
+      function showBanner(text, color = '#00f3ff', duration = 2.8) {
+        ui.bannerNotice.textContent = text;
+        ui.bannerNotice.style.borderColor = color;
+        ui.bannerNotice.style.color = color;
+        ui.bannerNotice.style.boxShadow = `0 0 24px ${color}66`;
+        ui.bannerNotice.classList.add('show');
+        state.bannerTimer = duration;
+      }
+
+      // Коллизия круга (x, z, r) с AABB препятствия
+      function resolveCircleObstacle(entity, obs) {
+        const minX = obs.x - obs.hw;
+        const maxX = obs.x + obs.hw;
+        const minZ = obs.z - obs.hd;
+        const maxZ = obs.z + obs.hd;
+
+        const cx = clamp(entity.x, minX, maxX);
+        const cz = clamp(entity.z, minZ, maxZ);
+        const dx = entity.x - cx;
+        const dz = entity.z - cz;
+        const dSq = dx * dx + dz * dz;
+        const r = entity.radius;
+
+        if (dSq < r * r) {
+          const d = Math.sqrt(dSq);
+          if (d > 0.0001) {
+            const overlap = r - d;
+            entity.x += (dx / d) * overlap;
+            entity.z += (dz / d) * overlap;
+          } else {
+            const left = entity.x - minX;
+            const right = maxX - entity.x;
+            const top = entity.z - minZ;
+            const bottom = maxZ - entity.z;
+            const m = Math.min(left, right, top, bottom);
+            if (m === left) entity.x = minX - r;
+            else if (m === right) entity.x = maxX + r;
+            else if (m === top) entity.z = minZ - r;
+            else entity.z = maxZ + r;
+          }
+          return true;
+        }
+        return false;
+      }
+
+      function pointInObstacle(x, z, obs, pad = 0) {
+        return (
+          x >= obs.x - obs.hw - pad &&
+          x <= obs.x + obs.hw + pad &&
+          z >= obs.z - obs.hd - pad &&
+          z <= obs.z + obs.hd + pad
+        );
+      }
+
+      // Проверка прямой видимости (для снайпера)
+      function hasLineOfSight(x1, z1, x2, z2) {
+        const steps = Math.ceil(distXZ(x1, z1, x2, z2) / 1.5);
+        for (let i = 1; i < steps; i++) {
+          const t = i / steps;
+          const px = x1 + (x2 - x1) * t;
+          const pz = z1 + (z2 - z1) * t;
+          for (const obs of state.obstacles) {
+            if (pointInObstacle(px, pz, obs, 0.2)) return false;
+          }
+        }
+        return true;
+      }
+
+      /* ==========================================================================
+         6. СОЗДАНИЕ ИГРОКА И ПРОЦЕДУРНАЯ ГЕНЕРАЦИЯ СЕКТОРА
+         ========================================================================== */
+      function createPlayer() {
+        return {
+          x: 0,
+          z: 0,
+          yaw: 0,
+          pitch: 0,
+          radius: 1.05,
+          hp: 100,
+          maxHp: 100,
+          shield: 0,
+          maxShield: 0,
+          shieldRegenDelay: 0,
+          baseSpeed: 13.5,
+          speedMult: 1,
+          // Стрельба
+          fireCooldown: 0,
+          baseFireRate: 5.2,
+          fireRateMult: 1,
+          baseDamage: 24,
+          damageMult: 1,
+          multishot: 1,
+          critChance: 0.08,
+          pierce: 0,
+          explosiveLevel: 0,
+          vampHeal: 0,
+          // Рывок
+          dashTimer: 0,
+          dashDuration: 0.22,
+          dashCooldown: 0,
+          baseDashCooldown: 1.85,
+          dashCooldownMult: 1,
+          dashDirX: 0,
+          dashDirZ: 0,
+          invulnTimer: 0,
+          implants: {}
+        };
+      }
+
+      function clearGroup(grp) {
+        while (grp.children.length > 0) {
+          grp.remove(grp.children[0]);
+        }
+      }
+
+      function generateSector(sectorNum) {
+        clearGroup(sectorGroup);
+        clearGroup(fxGroup);
+
+        state.obstacles = [];
+        state.enemies = [];
+        state.bullets = [];
+        state.particles = [];
+        state.portal = null;
+
+        const p = state.player;
+        p.x = 0;
+        p.z = 0;
+        p.invulnTimer = 1.0;
+
+        // Генерация неоновых колонн-укрытий
+        const pillarCount = randInt(9, 14);
+        const colors = [0x00f3ff, 0xff00aa, 0xa855f7];
+
+        for (let i = 0; i < pillarCount; i++) {
+          for (let attempt = 0; attempt < 25; attempt++) {
+            const w = rand(2.8, 6.2);
+            const d = rand(2.8, 6.2);
+            const h = rand(4.5, 9.5);
+            const hw = w / 2;
+            const hd = d / 2;
+            const x = rand(-ARENA_HALF + 6 + hw, ARENA_HALF - 6 - hw);
+            const z = rand(-ARENA_HALF + 6 + hd, ARENA_HALF - 6 - hd);
+
+            // Безопасная зона в центре (спавн игрока и портала)
+            if (distXZ(x, z, 0, 0) < 9.5 + Math.max(hw, hd)) continue;
+
+            // Не накладываться на другие колонны
+            let overlap = false;
+            for (const o of state.obstacles) {
+              if (
+                Math.abs(x - o.x) < hw + o.hw + 3.8 &&
+                Math.abs(z - o.z) < hd + o.hd + 3.8
+              ) {
+                overlap = true;
+                break;
+              }
+            }
+            if (!overlap) {
+              const neonHex = colors[i % colors.length];
+              const obsMesh = createPillarMesh(w, h, d, neonHex);
+              obsMesh.position.set(x, h / 2, z);
+              sectorGroup.add(obsMesh);
+              state.obstacles.push({ x, z, hw, hd, h, color: neonHex, mesh: obsMesh });
+              break;
+            }
+          }
+        }
+
+        // Спавн врагов или Босса (каждый 4-й сектор)
+        const isBossSector = sectorNum % 4 === 0;
+        if (isBossSector) {
+          spawnBoss(sectorNum);
+          const escorts = 2 + Math.floor(sectorNum / 4);
+          for (let i = 0; i < escorts; i++) spawnEnemy('drone', sectorNum);
+          audio.bossWarning();
+          showBanner(`⚠ СЕКТОР ${sectorNum}: БОСС «НЕЙРО-СТРАЖ» АКТИВИРОВАН ⚠`, '#ff2a55', 3.6);
+        } else {
+          const total = 5 + Math.floor(sectorNum * 1.8);
+          for (let i = 0; i < total; i++) {
+            const r = Math.random();
+            let type = 'drone';
+            if (sectorNum >= 3 && r > 0.78) type = 'sniper';
+            else if (sectorNum >= 2 && r > 0.56) type = 'heavy';
+            else if (r > 0.30) type = 'shooter';
+            spawnEnemy(type, sectorNum);
+          }
+          showBanner(`СЕКТОР ${String(sectorNum).padStart(2, '0')} // УНИЧТОЖЬТЕ ВСЕ УГРОЗЫ`, '#00f3ff', 2.6);
+        }
+
+        updateHUD();
+      }
+
+      function createPillarMesh(w, h, d, neonHex) {
+        const group = new THREE.Group();
+
+        const coreMat = new THREE.MeshStandardMaterial({
+          color: 0x0b1024,
+          roughness: 0.4,
+          metalness: 0.7
+        });
+        const core = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), coreMat);
+        group.add(core);
+
+        // Светящиеся неоновые рёбра
+        const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(w + 0.04, h + 0.04, d + 0.04));
+        const lineMat = new THREE.LineBasicMaterial({ color: neonHex });
+        const wire = new THREE.LineSegments(edges, lineMat);
+        group.add(wire);
+
+        // Неоновые горизонтальные пояса
+        const bandMat = new THREE.MeshBasicMaterial({ color: neonHex });
+        const bandTop = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, 0.18, d + 0.08), bandMat);
+        bandTop.position.y = h * 0.36;
+        group.add(bandTop);
+
+        const bandBot = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, 0.14, d + 0.08), bandMat);
+        bandBot.position.y = -h * 0.38;
+        group.add(bandBot);
+
+        return group;
+      }
+
+      function findSafeSpawnXZ(radius, minPlayerDist = 18) {
+        const p = state.player;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const x = rand(-ARENA_HALF + 4, ARENA_HALF - 4);
+          const z = rand(-ARENA_HALF + 4, ARENA_HALF - 4);
+          if (distXZ(x, z, p.x, p.z) < minPlayerDist) continue;
+          let blocked = false;
+          for (const obs of state.obstacles) {
+            if (pointInObstacle(x, z, obs, radius + 1.2)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (!blocked) return { x, z };
+        }
+        return { x: ARENA_HALF - 6, z: ARENA_HALF - 6 };
+      }
+
+      /* ==========================================================================
+         7. 3D-МОДЕЛИ 5 ТИПОВ ВРАГОВ
+         ========================================================================== */
+      function buildEnemyMesh(type, colorHex) {
+        const group = new THREE.Group();
+        const flashableMaterials = [];
+
+        const darkMat = new THREE.MeshStandardMaterial({
+          color: 0x11152b,
+          roughness: 0.4,
+          metalness: 0.7
+        });
+        const glowMat = new THREE.MeshStandardMaterial({
+          color: colorHex,
+          emissive: colorHex,
+          emissiveIntensity: 0.85,
+          roughness: 0.25,
+          metalness: 0.4
+        });
+        flashableMaterials.push(darkMat, glowMat);
+
+        if (type === 'drone') {
+          // Парящий кибер-ромб с вращающимся кольцом
+          const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), glowMat);
+          group.add(core);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.08, 8, 24), darkMat);
+          ring.rotation.x = Math.PI / 2;
+          group.add(ring);
+          group.userData.spinPart = ring;
+        } else if (type === 'shooter') {
+          // Гуманоидный бот
+          const torso = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.75), darkMat);
+          torso.position.y = 0.0;
+          group.add(torso);
+          const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.65), darkMat);
+          head.position.y = 1.1;
+          group.add(head);
+          const visor = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.2, 0.35), glowMat);
+          visor.position.set(0, 1.12, 0.22);
+          group.add(visor);
+          const chest = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.48, 0.82), glowMat);
+          chest.position.y = 0.15;
+          group.add(chest);
+        } else if (type === 'heavy') {
+          // Крупный бронированный штурмовик-мех
+          const hull = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.2, 1.5), darkMat);
+          group.add(hull);
+          const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 0), glowMat);
+          core.position.set(0, 0.25, 0.65);
+          group.add(core);
+          const gunL = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.6, 8), darkMat);
+          gunL.rotation.x = Math.PI / 2;
+          gunL.position.set(-1.3, 0.2, 0.55);
+          group.add(gunL);
+          const gunR = gunL.clone();
+          gunR.position.x = 1.3;
+          group.add(gunR);
+          const shoulderGlow = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 0.6), glowMat);
+          shoulderGlow.position.y = 1.15;
+          group.add(shoulderGlow);
+        } else if (type === 'sniper') {
+          // Высокий тонкий кибер-снайпер
+          const body = new THREE.Mesh(new THREE.ConeGeometry(0.85, 2.8, 6), darkMat);
+          group.add(body);
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), glowMat);
+          eye.position.set(0, 0.9, 0.38);
+          group.add(eye);
+          const halo = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.06, 8, 20), glowMat);
+          halo.rotation.x = Math.PI / 2;
+          halo.position.y = 0.2;
+          group.add(halo);
+          group.userData.spinPart = halo;
+        } else if (type === 'boss') {
+          // Босс «НЕЙРО-СТРАЖ»: массивное ядро + вращающиеся кольца
+          const core = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), glowMat);
+          group.add(core);
+
+          const ring1 = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.24, 12, 36), darkMat);
+          group.add(ring1);
+
+          const ring2 = new THREE.Mesh(
+            new THREE.TorusGeometry(4.1, 0.14, 10, 40),
+            new THREE.MeshBasicMaterial({ color: 0x00f3ff })
+          );
+          ring2.rotation.x = Math.PI / 3;
+          group.add(ring2);
+
+          const ring3 = new THREE.Mesh(
+            new THREE.TorusGeometry(4.6, 0.12, 10, 40),
+            new THREE.MeshBasicMaterial({ color: 0xfcee0a })
+          );
+          ring3.rotation.y = Math.PI / 3;
+          group.add(ring3);
+
+          group.userData.rings = [ring1, ring2, ring3];
+        }
+
+        return { group, flashableMaterials };
+      }
+
+      function spawnEnemy(type, sectorNum) {
+        const scale = 1 + (sectorNum - 1) * 0.18;
+        const configs = {
+          drone:   { radius: 1.25, y: 1.9, hp: Math.round(45 * scale),  speed: 9.8 + Math.min(4, sectorNum * 0.35), color: 0xff9900, hexStr: '#ff9900', score: 100, cd: 99 },
+          shooter: { radius: 1.2,  y: 1.65, hp: Math.round(68 * scale),  speed: 6.2, color: 0xff2a55, hexStr: '#ff2a55', score: 150, cd: rand(1.0, 2.0) },
+          heavy:   { radius: 1.9,  y: 1.95, hp: Math.round(150 * scale), speed: 4.1, color: 0xa855f7, hexStr: '#a855f7', score: 260, cd: rand(1.5, 2.4) },
+          sniper:  { radius: 1.15, y: 1.85, hp: Math.round(64 * scale),  speed: 5.2, color: 0xfcee0a, hexStr: '#fcee0a', score: 240, cd: rand(2.0, 3.2) }
+        };
+
+        const cfg = configs[type];
+        const pos = findSafeSpawnXZ(cfg.radius, 18);
+        const { group, flashableMaterials } = buildEnemyMesh(type, cfg.color);
+        group.position.set(pos.x, cfg.y, pos.z);
+        sectorGroup.add(group);
+
+        // Лазерный луч для снайпера
+        let laserLine = null;
+        if (type === 'sniper') {
+          const laserGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -1)
+          ]);
+          const laserMat = new THREE.LineBasicMaterial({ color: 0xff1e42, transparent: true, opacity: 0.9 });
+          laserLine = new THREE.Line(laserGeo, laserMat);
+          laserLine.visible = false;
+          sectorGroup.add(laserLine);
+        }
+
+        state.enemies.push({
+          type,
+          x: pos.x,
+          y: cfg.y,
+          baseY: cfg.y,
+          z: pos.z,
+          radius: cfg.radius,
+          hp: cfg.hp,
+          maxHp: cfg.hp,
+          speed: cfg.speed,
+          color: cfg.color,
+          hexStr: cfg.hexStr,
+          score: cfg.score,
+          fireTimer: cfg.cd,
+          aimTimer: 0,
+          aimTargetX: 0,
+          aimTargetZ: 0,
+          laserLine,
+          strafeDir: Math.random() < 0.5 ? -1 : 1,
+          bobOffset: Math.random() * Math.PI * 2,
+          hitFlash: 0,
+          isBoss: false,
+          mesh: group,
+          materials: flashableMaterials,
+          _dead: false
+        });
+      }
+
+      function spawnBoss(sectorNum) {
+        const tier = Math.floor(sectorNum / 4);
+        const pos = findSafeSpawnXZ(4.5, 24);
+        const maxHp = Math.round(1050 * (1 + (tier - 1) * 0.65));
+        const { group, flashableMaterials } = buildEnemyMesh('boss', 0xff00aa);
+        group.position.set(pos.x, 4.2, pos.z);
+        sectorGroup.add(group);
+
+        state.enemies.push({
+          type: 'boss',
+          name: `БОСС «НЕЙРО-СТРАЖ» MK-${tier}`,
+          x: pos.x,
+          y: 4.2,
+          baseY: 4.2,
+          z: pos.z,
+          radius: 3.4,
+          hp: maxHp,
+          maxHp,
+          speed: 4.8 + tier * 0.5,
+          color: 0xff00aa,
+          hexStr: '#ff00aa',
+          score: 1800 * tier,
+          phaseTimer: 1.5,
+          patternIndex: 0,
+          spinAngle: 0,
+          bobOffset: 0,
+          hitFlash: 0,
+          isBoss: true,
+          mesh: group,
+          materials: flashableMaterials,
+          _dead: false
+        });
+      }
+
+      /* ==========================================================================
+         8. 3D-ПОРТАЛ ПЕРЕХОДА
+         ========================================================================== */
+      function spawnPortal() {
+        const group = new THREE.Group();
+        group.position.set(0, 2.3, 0);
+
+        const ring1 = new THREE.Mesh(
+          new THREE.TorusGeometry(2.4, 0.14, 12, 36),
+          new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+        );
+        group.add(ring1);
+
+        const ring2 = new THREE.Mesh(
+          new THREE.TorusGeometry(1.75, 0.1, 10, 32),
+          new THREE.MeshBasicMaterial({ color: 0x00f3ff })
+        );
+        group.add(ring2);
+
+        const core = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.5, 1.5, 4.4, 24, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: 0x00ff88,
+            transparent: true,
+            opacity: 0.28,
+            side: THREE.DoubleSide
+          })
+        );
+        group.add(core);
+
+        const light = new THREE.PointLight(0x00ff88, 2.5, 22);
+        group.add(light);
+
+        sectorGroup.add(group);
+        state.portal = { x: 0, z: 0, radius: 2.5, group, ring1, ring2, light };
+
+        audio.portalOpen();
+        showBanner('СЕКТОР ЗАЧИЩЕН — ВОЙДИТЕ В 3D-ПОРТАЛ В ЦЕНТРЕ', '#00ff88', 4.2);
+      }
+
+      /* ==========================================================================
+         9. СТРЕЛЬБА, РЫВОК, ЧАСТИЦЫ И УРОН
+         ========================================================================== */
+      function firePlayerWeapon() {
+        const p = state.player;
+        const count = p.multishot;
+        const spreadStep = 0.055;
+        const totalSpread = (count - 1) * spreadStep;
+
+        // Базовое направление камеры
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+
+        // Точка вылета чуть правее и ниже центра (из ствола оружия)
+        const muzzleOrigin = camera.position.clone()
+          .addScaledVector(forward, 1.0)
+          .addScaledVector(right, 0.24)
+          .addScaledVector(up, -0.18);
+
+        for (let i = 0; i < count; i++) {
+          const offsetAngle = -totalSpread / 2 + i * spreadStep + rand(-0.008, 0.008);
+          const dir = forward.clone().addScaledVector(right, Math.sin(offsetAngle)).normalize();
+
+          const isCrit = Math.random() < p.critChance;
+          const dmg = Math.round(p.baseDamage * p.damageMult * (isCrit ? 2 : 1));
+          const color = isCrit ? 0xfcee0a : (p.pierce > 0 ? 0xff00aa : 0x00f3ff);
+
+          const mesh = new THREE.Mesh(
+            sharedGeo.playerBullet,
+            new THREE.MeshBasicMaterial({ color })
+          );
+          mesh.position.copy(muzzleOrigin);
+          fxGroup.add(mesh);
+
+          state.bullets.push({
+            fromPlayer: true,
+            x: muzzleOrigin.x,
+            y: muzzleOrigin.y,
+            z: muzzleOrigin.z,
+            vx: dir.x * 68,
+            vy: dir.y * 68,
+            vz: dir.z * 68,
+            radius: 0.26,
+            damage: dmg,
+            isCrit,
+            color,
+            pierceLeft: p.pierce,
+            explosiveLevel: p.explosiveLevel,
+            hitSet: new Set(),
+            life: 1.6,
+            mesh
+          });
+        }
+
+        // Отдача оружия и вспышка света
+        weaponRecoil = Math.min(0.18, weaponRecoil + 0.095);
+        muzzleFlashMesh.material.opacity = 0.95;
+        muzzleFlashMesh.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
+        muzzleLight.intensity = 4.5;
+
+        // Анимация прицела
+        ui.crosshair.classList.add('firing');
+        setTimeout(() => ui.crosshair.classList.remove('firing'), 70);
+
+        audio.shoot();
+      }
+
+      function spawnEnemyBullet(x, y, z, dirX, dirY, dirZ, speed, damage, colorHex, radius = 0.34) {
+        const mesh = new THREE.Mesh(
+          sharedGeo.enemyBullet,
+          new THREE.MeshBasicMaterial({ color: colorHex })
+        );
+        mesh.position.set(x, y, z);
+        fxGroup.add(mesh);
+
+        state.bullets.push({
+          fromPlayer: false,
+          x, y, z,
+          vx: dirX * speed,
+          vy: dirY * speed,
+          vz: dirZ * speed,
+          radius,
+          damage,
+          color: colorHex,
+          life: 3.6,
+          mesh
+        });
+      }
+
+      function spawnExplosion3D(x, y, z, colorHex, count = 16, speed = 12) {
+        const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+        for (let i = 0; i < count; i++) {
+          const mesh = new THREE.Mesh(sharedGeo.particle, mat);
+          mesh.position.set(x, y, z);
+          const s = rand(0.6, 1.5);
+          mesh.scale.set(s, s, s);
+          fxGroup.add(mesh);
+
+          const theta = Math.random() * Math.PI * 2;
+          const phi = rand(-0.6, 1.1);
+          const spd = rand(speed * 0.35, speed);
+          state.particles.push({
+            mesh,
+            vx: Math.cos(theta) * Math.cos(phi) * spd,
+            vy: Math.sin(phi) * spd + 2.5,
+            vz: Math.sin(theta) * Math.cos(phi) * spd,
+            life: rand(0.28, 0.62),
+            maxLife: 0.62
+          });
+        }
+      }
+
+      function triggerDash() {
+        const p = state.player;
+        if (p.dashCooldown > 0 || p.dashTimer > 0) return;
+
+        // Определяем вектор рывка по нажатым клавишам WASD или вперёд по взгляду
+        const fwdX = -Math.sin(p.yaw);
+        const fwdZ = -Math.cos(p.yaw);
+        const rightX = Math.cos(p.yaw);
+        const rightZ = -Math.sin(p.yaw);
+
+        let mx = 0;
+        let mz = 0;
+        if (input.keys['KeyW'] || input.keys['ArrowUp'])    { mx += fwdX; mz += fwdZ; }
+        if (input.keys['KeyS'] || input.keys['ArrowDown'])  { mx -= fwdX; mz -= fwdZ; }
+        if (input.keys['KeyD']) { mx += rightX; mz += rightZ; }
+        if (input.keys['KeyA']) { mx -= rightX; mz -= rightZ; }
+
+        const len = Math.hypot(mx, mz);
+        if (len > 0.01) {
+          p.dashDirX = mx / len;
+          p.dashDirZ = mz / len;
+        } else {
+          p.dashDirX = fwdX;
+          p.dashDirZ = fwdZ;
+        }
+
+        p.dashTimer = p.dashDuration;
+        p.invulnTimer = Math.max(p.invulnTimer, 0.25); // 0.25с неуязвимости
+        p.dashCooldown = p.baseDashCooldown * p.dashCooldownMult;
+        audio.dash();
+      }
+
+      function triggerHitmarker(crit) {
+        state.hitmarkerTimer = 0.14;
+        ui.hitmarker.classList.toggle('crit', crit);
+        ui.hitmarker.classList.add('show');
+        audio.hitmarker(crit);
+      }
+
+      function damageEnemy(enemy, amount, isCrit = false) {
+        if (enemy._dead) return;
+        enemy.hp -= amount;
+        enemy.hitFlash = 0.11;
+        triggerHitmarker(isCrit);
+
+        // Вспышка материалов врага белым
+        for (const m of enemy.materials) {
+          if (m.emissive) {
+            if (!m.userData.origEmissive) m.userData.origEmissive = m.emissive.getHex();
+            m.emissive.setHex(0xffffff);
+          }
+        }
+
+        if (enemy.hp <= 0) {
+          enemy._dead = true;
+          onEnemyKilled(enemy);
+        }
+      }
+
+      function onEnemyKilled(enemy) {
+        const p = state.player;
+        state.kills += 1;
+        state.score += enemy.score;
+
+        audio.explosion(enemy.isBoss);
+        spawnExplosion3D(enemy.x, enemy.y, enemy.z, enemy.color, enemy.isBoss ? 42 : 18, enemy.isBoss ? 18 : 11);
+        if (enemy.isBoss) state.cameraShake = Math.min(0.6, state.cameraShake + 0.45);
+
+        sectorGroup.remove(enemy.mesh);
+        if (enemy.laserLine) sectorGroup.remove(enemy.laserLine);
+
+        // Вампиризм данных
+        if (p.vampHeal > 0 && p.hp < p.maxHp) {
+          p.hp = Math.min(p.maxHp, p.hp + p.vampHeal);
+        }
+      }
+
+      function damagePlayer(amount) {
+        const p = state.player;
+        if (p.invulnTimer > 0 || state.mode !== 'playing') return;
+
+        p.invulnTimer = 0.45;
+        p.shieldRegenDelay = 4.0;
+
+        let rem = amount;
+        let onlyShield = false;
+
+        if (p.shield > 0) {
+          const absorbed = Math.min(p.shield, rem);
+          p.shield -= absorbed;
+          rem -= absorbed;
+          if (rem <= 0) onlyShield = true;
+        }
+
+        if (rem > 0) {
+          p.hp -= rem;
+          state.damageFlash = 0.85;
+          state.cameraShake = Math.min(0.5, state.cameraShake + 0.28);
+        } else {
+          state.cameraShake = Math.min(0.3, state.cameraShake + 0.14);
+        }
+
+        audio.playerHurt(onlyShield);
+
+        if (p.hp <= 0) {
+          p.hp = 0;
+          triggerGameOver();
+        }
+        updateHUD();
+      }
+
+      /* ==========================================================================
+         10. ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ (UPDATE)
+         ========================================================================== */
+      function update(dt) {
+        state.time += dt;
+
+        // Баннер
+        if (state.bannerTimer > 0) {
+          state.bannerTimer -= dt;
+          if (state.bannerTimer <= 0) ui.bannerNotice.classList.remove('show');
+        }
+
+        // Хитмаркер
+        if (state.hitmarkerTimer > 0) {
+          state.hitmarkerTimer -= dt;
+          if (state.hitmarkerTimer <= 0) ui.hitmarker.classList.remove('show');
+        }
+
+        // Красная виньетка урона
+        if (state.damageFlash > 0) {
+          state.damageFlash = Math.max(0, state.damageFlash - dt * 2.4);
+          ui.damageVignette.style.opacity = state.damageFlash.toFixed(2);
+        }
+
+        if (state.mode !== 'playing') {
+          // Медленное вращение камеры на фоне меню
+          if (state.mode === 'menu') {
+            camera.position.set(Math.sin(state.time * 0.22) * 22, 6.5, Math.cos(state.time * 0.22) * 22);
+            camera.lookAt(0, 2, 0);
+          }
+          return;
+        }
+
+        const p = state.player;
+
+        // --- 1. Таймеры игрока ---
+        if (p.invulnTimer > 0) p.invulnTimer -= dt;
+        if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
+        if (p.fireCooldown > 0) p.fireCooldown -= dt;
+
+        // Регенерация щита
+        if (p.maxShield > 0) {
+          if (p.shieldRegenDelay > 0) p.shieldRegenDelay -= dt;
+          else if (p.shield < p.maxShield) p.shield = Math.min(p.maxShield, p.shield + 14 * dt);
+        }
+
+        // Поворот стрелками влево/вправо (поддержка игры без мыши)
+        const turnSpeed = 2.4;
+        if (input.keys['ArrowLeft']) p.yaw += turnSpeed * dt;
+        if (input.keys['ArrowRight']) p.yaw -= turnSpeed * dt;
+
+        // --- 2. Передвижение игрока и рывок ---
+        let isMoving = false;
+        if (p.dashTimer > 0) {
+          p.dashTimer -= dt;
+          const dashSpeed = 42;
+          p.x += p.dashDirX * dashSpeed * dt;
+          p.z += p.dashDirZ * dashSpeed * dt;
+          isMoving = true;
+        } else {
+          const fwdX = -Math.sin(p.yaw);
+          const fwdZ = -Math.cos(p.yaw);
+          const rightX = Math.cos(p.yaw);
+          const rightZ = -Math.sin(p.yaw);
+
+          let mx = 0;
+          let mz = 0;
+          if (input.keys['KeyW'] || input.keys['ArrowUp'])   { mx += fwdX; mz += fwdZ; }
+          if (input.keys['KeyS'] || input.keys['ArrowDown']) { mx -= fwdX; mz -= fwdZ; }
+          if (input.keys['KeyD']) { mx += rightX; mz += rightZ; }
+          if (input.keys['KeyA']) { mx -= rightX; mz -= rightZ; }
+
+          const len = Math.hypot(mx, mz);
+          if (len > 0.01) {
+            mx /= len;
+            mz /= len;
+            const spd = p.baseSpeed * p.speedMult;
+            p.x += mx * spd * dt;
+            p.z += mz * spd * dt;
+            isMoving = true;
+          }
+        }
+
+        // Коллизии игрока со стенами арены и колоннами
+        const lim = ARENA_HALF - p.radius - 0.3;
+        p.x = clamp(p.x, -lim, lim);
+        p.z = clamp(p.z, -lim, lim);
+        for (const obs of state.obstacles) {
+          resolveCircleObstacle(p, obs);
+        }
+
+        // --- 3. Камера, FOV при рывке, тряска и анимация оружия ---
+        const targetFov = p.dashTimer > 0 ? DASH_FOV : BASE_FOV;
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 14);
+        camera.updateProjectionMatrix();
+
+        // Неоновые линии скорости при рывке
+        const targetSpeedOpacity = p.dashTimer > 0 ? 0.9 : 0;
+        ui.speedLines.style.opacity = targetSpeedOpacity;
+
+        if (state.cameraShake > 0) state.cameraShake = Math.max(0, state.cameraShake - dt * 1.8);
+        const shakeX = state.cameraShake > 0 ? rand(-state.cameraShake, state.cameraShake) : 0;
+        const shakeY = state.cameraShake > 0 ? rand(-state.cameraShake, state.cameraShake) : 0;
+
+        camera.position.set(p.x + shakeX, EYE_HEIGHT + shakeY, p.z);
+        camera.rotation.y = p.yaw;
+        camera.rotation.x = p.pitch;
+
+        // Покачивание и отдача 3D-оружия
+        if (isMoving) weaponBobTime += dt * 11;
+        const bobX = isMoving ? Math.cos(weaponBobTime) * 0.015 : 0;
+        const bobY = isMoving ? Math.abs(Math.sin(weaponBobTime)) * 0.018 : 0;
+        weaponRecoil = Math.max(0, weaponRecoil - dt * 0.65);
+
+        weaponGroup.position.set(0.36 + bobX, -0.31 - bobY + weaponRecoil * 0.15, -0.62 + weaponRecoil);
+        weaponGroup.rotation.x = weaponRecoil * 0.9;
+
+        // Затухание дульной вспышки
+        if (muzzleFlashMesh.material.opacity > 0) {
+          muzzleFlashMesh.material.opacity = Math.max(0, muzzleFlashMesh.material.opacity - dt * 18);
+        }
+        if (muzzleLight.intensity > 0) {
+          muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 45);
+        }
+
+        // Автоматический огонь
+        if ((input.mouseDown || input.keys['KeyF']) && p.fireCooldown <= 0) {
+          firePlayerWeapon();
+          p.fireCooldown = 1 / (p.baseFireRate * p.fireRateMult);
+        }
+
+        // --- 4. Обновление врагов ---
+        updateEnemies(dt);
+        state.enemies = state.enemies.filter(e => !e._dead);
+
+        // Открытие 3D-портала после зачистки
+        if (state.enemies.length === 0 && !state.portal) {
+          spawnPortal();
+        }
+
+        // Анимация и вход в 3D-портал
+        if (state.portal) {
+          state.portal.ring1.rotation.z += dt * 1.8;
+          state.portal.ring1.rotation.y += dt * 1.1;
+          state.portal.ring2.rotation.x += dt * 2.3;
+          state.portal.ring2.rotation.z -= dt * 1.5;
+
+          if (distXZ(p.x, p.z, state.portal.x, state.portal.z) < state.portal.radius + p.radius * 0.5) {
+            openImplantSelection();
+            return;
+          }
+        }
+
+        // --- 5. Обновление снарядов и частиц ---
+        updateBullets(dt);
+        updateParticles(dt);
+
+        // --- 6. Обновление HUD и 2D Радара ---
+        updateHUD();
+        drawRadar();
+      }
+
+      function updateEnemies(dt) {
+        const p = state.player;
+        for (let i = 0; i < state.enemies.length; i++) {
+          const e = state.enemies[i];
+
+          // Восстановление цвета после вспышки попадания
+          if (e.hitFlash > 0) {
+            e.hitFlash -= dt;
+            if (e.hitFlash <= 0) {
+              for (const m of e.materials) {
+                if (m.emissive && m.userData.origEmissive !== undefined) {
+                  m.emissive.setHex(m.userData.origEmissive);
+                }
+              }
+            }
+          }
+
+          const dx = p.x - e.x;
+          const dz = p.z - e.z;
+          const d = Math.hypot(dx, dz) || 1;
+          const nx = dx / d;
+          const nz = dz / d;
+
+          // Поворот модели к игроку
+          e.mesh.rotation.y = Math.atan2(dx, dz);
+
+          // Парящая анимация и вращение элементов
+          e.y = e.baseY + Math.sin(state.time * 3.2 + e.bobOffset) * 0.25;
+          if (e.mesh.userData.spinPart) {
+            e.mesh.userData.spinPart.rotation.z += dt * 3.5;
+          }
+          if (e.mesh.userData.rings) {
+            e.mesh.userData.rings[0].rotation.x += dt * 1.4;
+            e.mesh.userData.rings[0].rotation.y += dt * 1.1;
+            e.mesh.userData.rings[1].rotation.y -= dt * 1.9;
+            e.mesh.userData.rings[1].rotation.z += dt * 1.2;
+            e.mesh.userData.rings[2].rotation.x -= dt * 1.6;
+          }
+
+          if (e.type === 'drone') {
+            e.x += nx * e.speed * dt;
+            e.z += nz * e.speed * dt;
+          } else if (e.type === 'shooter') {
+            if (d > 20) {
+              e.x += nx * e.speed * dt;
+              e.z += nz * e.speed * dt;
+            } else if (d < 11) {
+              e.x -= nx * e.speed * 0.8 * dt;
+              e.z -= nz * e.speed * 0.8 * dt;
+            } else {
+              e.x += -nz * e.speed * 0.7 * e.strafeDir * dt;
+              e.z += nx * e.speed * 0.7 * e.strafeDir * dt;
+            }
+
+            e.fireTimer -= dt;
+            if (e.fireTimer <= 0 && hasLineOfSight(e.x, e.z, p.x, p.z)) {
+              e.fireTimer = rand(1.4, 2.2);
+              const dy = (EYE_HEIGHT - 0.25) - e.y;
+              const len3 = Math.hypot(dx, dy, dz) || 1;
+              spawnEnemyBullet(e.x, e.y, e.z, dx / len3, dy / len3, dz / len3, 24, 14, 0xff2a55);
+              audio.enemyShoot();
+            }
+          } else if (e.type === 'heavy') {
+            if (d > 15) {
+              e.x += nx * e.speed * dt;
+              e.z += nz * e.speed * dt;
+            }
+            e.fireTimer -= dt;
+            if (e.fireTimer <= 0 && hasLineOfSight(e.x, e.z, p.x, p.z)) {
+              e.fireTimer = rand(2.0, 2.7);
+              const baseAngle = Math.atan2(dx, dz);
+              const dy = (EYE_HEIGHT - 0.3) - e.y;
+              for (let k = -1; k <= 1; k++) {
+                const ang = baseAngle + k * 0.18;
+                const bdx = Math.sin(ang);
+                const bdz = Math.cos(ang);
+                const len3 = Math.hypot(bdx, dy / d, bdz) || 1;
+                spawnEnemyBullet(e.x, e.y, e.z, bdx / len3, (dy / d) / len3, bdz / len3, 21, 16, 0xc084fc, 0.42);
+              }
+              audio.enemyShoot();
+            }
+          } else if (e.type === 'sniper') {
+            if (e.aimTimer > 0) {
+              e.aimTimer -= dt;
+              // Плавно ведёт лазер за игроком
+              e.aimTargetX += (p.x - e.aimTargetX) * Math.min(1, dt * 4.5);
+              e.aimTargetZ += (p.z - e.aimTargetZ) * Math.min(1, dt * 4.5);
+
+              // Обновляем 3D красный лазерный луч
+              if (e.laserLine) {
+                e.laserLine.visible = true;
+                const posArr = e.laserLine.geometry.attributes.position.array;
+                posArr[0] = e.x; posArr[1] = e.y + 0.8; posArr[2] = e.z;
+                posArr[3] = e.aimTargetX; posArr[4] = EYE_HEIGHT - 0.2; posArr[5] = e.aimTargetZ;
+                e.laserLine.geometry.attributes.position.needsUpdate = true;
+              }
+
+              if (e.aimTimer <= 0) {
+                if (e.laserLine) e.laserLine.visible = false;
+                const sdx = e.aimTargetX - e.x;
+                const sdy = (EYE_HEIGHT - 0.2) - (e.y + 0.8);
+                const sdz = e.aimTargetZ - e.z;
+                const len3 = Math.hypot(sdx, sdy, sdz) || 1;
+                spawnEnemyBullet(e.x, e.y + 0.8, e.z, sdx / len3, sdy / len3, sdz / len3, 56, 26, 0xfcee0a, 0.32);
+                audio.sniperShoot();
+                e.fireTimer = rand(2.4, 3.2);
+              }
+            } else {
+              if (e.laserLine) e.laserLine.visible = false;
+              if (d < 20) {
+                e.x -= nx * e.speed * dt;
+                e.z -= nz * e.speed * dt;
+              } else if (d > 34) {
+                e.x += nx * e.speed * dt;
+                e.z += nz * e.speed * dt;
+              }
+              e.fireTimer -= dt;
+              if (e.fireTimer <= 0 && hasLineOfSight(e.x, e.z, p.x, p.z)) {
+                e.aimTimer = 1.15;
+                e.aimTargetX = p.x;
+                e.aimTargetZ = p.z;
+              }
+            }
+          } else if (e.type === 'boss') {
+            e.spinAngle += dt * 1.6;
+            if (d > 18) {
+              e.x += nx * e.speed * dt;
+              e.z += nz * e.speed * dt;
+            } else {
+              e.x += -nz * e.speed * 0.7 * dt;
+              e.z += nx * e.speed * 0.7 * dt;
+            }
+
+            e.phaseTimer -= dt;
+            if (e.phaseTimer <= 0) {
+              const pat = e.patternIndex % 3;
+              e.patternIndex++;
+              const dy = (EYE_HEIGHT - 0.3) - e.y;
+
+              if (pat === 0) {
+                // Кольцевой залп (14 снарядов)
+                const cnt = 14;
+                for (let b = 0; b < cnt; b++) {
+                  const ang = e.spinAngle + (b * Math.PI * 2) / cnt;
+                  const bdx = Math.sin(ang);
+                  const bdz = Math.cos(ang);
+                  const len3 = Math.hypot(bdx, dy / d, bdz) || 1;
+                  spawnEnemyBullet(e.x, e.y, e.z, bdx / len3, (dy / d) / len3, bdz / len3, 20, 16, 0xff00aa, 0.45);
+                }
+                audio.enemyShoot();
+                e.phaseTimer = 1.3;
+              } else if (pat === 1) {
+                // Прицельный веер из 5 быстрых снарядов
+                const baseAngle = Math.atan2(dx, dz);
+                for (let k = -2; k <= 2; k++) {
+                  const ang = baseAngle + k * 0.14;
+                  const bdx = Math.sin(ang);
+                  const bdz = Math.cos(ang);
+                  const len3 = Math.hypot(bdx, dy / d, bdz) || 1;
+                  spawnEnemyBullet(e.x, e.y, e.z, bdx / len3, (dy / d) / len3, bdz / len3, 29, 18, 0xfcee0a, 0.4);
+                }
+                audio.sniperShoot();
+                e.phaseTimer = 1.15;
+              } else {
+                // Спиральный залп (8 циановых плазменных шаров)
+                for (let b = 0; b < 8; b++) {
+                  const ang = e.spinAngle * 2 + (b * Math.PI * 2) / 8;
+                  const bdx = Math.sin(ang);
+                  const bdz = Math.cos(ang);
+                  const len3 = Math.hypot(bdx, dy / d, bdz) || 1;
+                  spawnEnemyBullet(e.x, e.y, e.z, bdx / len3, (dy / d) / len3, bdz / len3, 24, 16, 0x00f3ff, 0.42);
+                }
+                audio.enemyShoot();
+                e.phaseTimer = 1.25;
+              }
+            }
+          }
+
+          // Расталкивание врагов друг от друга
+          for (let j = i + 1; j < state.enemies.length; j++) {
+            const o = state.enemies[j];
+            const ex = e.x - o.x;
+            const ez = e.z - o.z;
+            const ed = Math.hypot(ex, ez) || 1;
+            const minD = e.radius + o.radius + 0.5;
+            if (ed < minD) {
+              const push = (minD - ed) * 0.5;
+              e.x += (ex / ed) * push;
+              e.z += (ez / ed) * push;
+              o.x -= (ex / ed) * push;
+              o.z -= (ez / ed) * push;
+            }
+          }
+
+          // Границы арены и коллизии с колоннами
+          const lim = ARENA_HALF - e.radius - 0.5;
+          e.x = clamp(e.x, -lim, lim);
+          e.z = clamp(e.z, -lim, lim);
+          for (const obs of state.obstacles) {
+            resolveCircleObstacle(e, obs);
+          }
+
+          e.mesh.position.set(e.x, e.y, e.z);
+
+          // Контактный урон игроку
+          if (distXZ(e.x, e.z, p.x, p.z) < e.radius + p.radius) {
+            damagePlayer(e.isBoss ? 25 : 16);
+          }
+        }
+      }
+
+      function updateBullets(dt) {
+        const p = state.player;
+        for (let i = state.bullets.length - 1; i >= 0; i--) {
+          const b = state.bullets[i];
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+          b.z += b.vz * dt;
+          b.life -= dt;
+          b.mesh.position.set(b.x, b.y, b.z);
+
+          let remove = false;
+
+          // Границы арены, пол или потолок
+          if (
+            b.life <= 0 ||
+            b.y <= 0.1 || b.y >= WALL_HEIGHT + 4 ||
+            Math.abs(b.x) >= ARENA_HALF - 0.2 ||
+            Math.abs(b.z) >= ARENA_HALF - 0.2
+          ) {
+            remove = true;
+          }
+
+          // Столкновение с колоннами-укрытиями
+          if (!remove) {
+            for (const obs of state.obstacles) {
+              if (b.y <= obs.h && pointInObstacle(b.x, b.z, obs, b.radius)) {
+                spawnExplosion3D(b.x, b.y, b.z, b.color, 5, 6);
+                remove = true;
+                break;
+              }
+            }
+          }
+
+          // Попадание по целям
+          if (!remove && b.fromPlayer) {
+            for (const e of state.enemies) {
+              if (e._dead || b.hitSet.has(e)) continue;
+              const dXZ = distXZ(b.x, b.z, e.x, e.z);
+              const dY = Math.abs(b.y - e.y);
+              const hitRadius = e.radius + b.radius + 0.35;
+              const hitHeight = e.isBoss ? 3.8 : 1.9;
+
+              if (dXZ < hitRadius && dY < hitHeight) {
+                b.hitSet.add(e);
+                damageEnemy(e, b.damage, b.isCrit);
+                spawnExplosion3D(b.x, b.y, b.z, b.color, 6, 7);
+
+                // Взрывные снаряды (AoE урон)
+                if (b.explosiveLevel > 0) {
+                  const blastR = 4.5 + b.explosiveLevel * 1.4;
+                  const blastDmg = Math.round(b.damage * (0.45 + b.explosiveLevel * 0.15));
+                  spawnExplosion3D(b.x, b.y, b.z, 0xff5500, 14, 13);
+                  audio.explosion(false);
+                  for (const other of state.enemies) {
+                    if (other !== e && !other._dead && distXZ(b.x, b.z, other.x, other.z) <= blastR + other.radius) {
+                      damageEnemy(other, blastDmg, false);
+                    }
+                  }
+                }
+
+                if (b.pierceLeft > 0) {
+                  b.pierceLeft--;
+                } else {
+                  remove = true;
+                  break;
+                }
+              }
+            }
+          } else if (!remove && !b.fromPlayer) {
+            const dXZ = distXZ(b.x, b.z, p.x, p.z);
+            const dY = Math.abs(b.y - (EYE_HEIGHT - 0.3));
+            if (dXZ < p.radius + b.radius && dY < 1.35) {
+              damagePlayer(b.damage);
+              remove = true;
+            }
+          }
+
+          if (remove) {
+            fxGroup.remove(b.mesh);
+            state.bullets.splice(i, 1);
+          }
+        }
+      }
+
+      function updateParticles(dt) {
+        for (let i = state.particles.length - 1; i >= 0; i--) {
+          const pt = state.particles[i];
+          pt.life -= dt;
+          pt.vy -= 14 * dt; // лёгкая гравитация
+          pt.mesh.position.x += pt.vx * dt;
+          pt.mesh.position.y = Math.max(0.1, pt.mesh.position.y + pt.vy * dt);
+          pt.mesh.position.z += pt.vz * dt;
+          pt.mesh.rotation.x += dt * 6;
+          pt.mesh.rotation.y += dt * 6;
+
+          const s = Math.max(0.01, pt.life / pt.maxLife);
+          pt.mesh.scale.set(s, s, s);
+
+          if (pt.life <= 0) {
+            fxGroup.remove(pt.mesh);
+            state.particles.splice(i, 1);
+          }
+        }
+      }
+
+      /* ==========================================================================
+         11. 2D РАДАР / МИНИ-КАРТА И HUD
+         ========================================================================== */
+      function drawRadar() {
+        const w = ui.radarCanvas.width;
+        const h = ui.radarCanvas.height;
+        const pad = 8;
+        const scale = (w - pad * 2) / ARENA_SIZE;
+        const toX = (wx) => pad + (wx + ARENA_HALF) * scale;
+        const toY = (wz) => pad + (wz + ARENA_HALF) * scale;
+
+        radarCtx.clearRect(0, 0, w, h);
+
+        // Фон и сетка радара
+        radarCtx.fillStyle = 'rgba(4, 9, 22, 0.92)';
+        radarCtx.fillRect(0, 0, w, h);
+
+        radarCtx.strokeStyle = 'rgba(0, 243, 255, 0.14)';
+        radarCtx.lineWidth = 1;
+        radarCtx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+
+        // Колонны-укрытия
+        radarCtx.fillStyle = 'rgba(0, 243, 255, 0.25)';
+        for (const obs of state.obstacles) {
+          const ox = toX(obs.x - obs.hw);
+          const oy = toY(obs.z - obs.hd);
+          radarCtx.fillRect(ox, oy, obs.hw * 2 * scale, obs.hd * 2 * scale);
+        }
+
+        // Портал
+        if (state.portal) {
+          const px = toX(state.portal.x);
+          const py = toY(state.portal.z);
+          radarCtx.beginPath();
+          radarCtx.arc(px, py, 6, 0, Math.PI * 2);
+          radarCtx.fillStyle = 'rgba(0, 255, 136, 0.35)';
+          radarCtx.fill();
+          radarCtx.strokeStyle = '#00ff88';
+          radarCtx.lineWidth = 1.8;
+          radarCtx.stroke();
+        }
+
+        // Враги
+        for (const e of state.enemies) {
+          const ex = toX(e.x);
+          const ey = toY(e.z);
+          radarCtx.fillStyle = e.hexStr;
+          radarCtx.beginPath();
+          radarCtx.arc(ex, ey, e.isBoss ? 5.2 : 2.8, 0, Math.PI * 2);
+          radarCtx.fill();
+        }
+
+        // Игрок + конус направления взгляда
+        const p = state.player;
+        if (p) {
+          const px = toX(p.x);
+          const py = toY(p.z);
+          // В Three.js yaw=0 смотрит на -Z (вверх на радаре)
+          const lookAngle = -p.yaw - Math.PI / 2;
+
+          radarCtx.save();
+          radarCtx.translate(px, py);
+          radarCtx.rotate(lookAngle);
+
+          // Конус обзора
+          radarCtx.fillStyle = 'rgba(0, 243, 255, 0.22)';
+          radarCtx.beginPath();
+          radarCtx.moveTo(0, 0);
+          radarCtx.arc(0, 0, 22, -0.5, 0.5);
+          radarCtx.closePath();
+          radarCtx.fill();
+
+          // Стрелка игрока
+          radarCtx.fillStyle = '#00f3ff';
+          radarCtx.beginPath();
+          radarCtx.moveTo(6, 0);
+          radarCtx.lineTo(-4, -3.5);
+          radarCtx.lineTo(-4, 3.5);
+          radarCtx.closePath();
+          radarCtx.fill();
+          radarCtx.restore();
+        }
+      }
+
+      function updateHUD() {
+        const p = state.player;
+        if (!p) return;
+
+        ui.hpText.textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
+        ui.hpFill.style.width = `${clamp((p.hp / p.maxHp) * 100, 0, 100)}%`;
+
+        if (p.maxShield > 0) {
+          ui.shieldBarGroup.style.display = 'block';
+          ui.shieldText.textContent = `${Math.ceil(p.shield)} / ${p.maxShield}`;
+          ui.shieldFill.style.width = `${clamp((p.shield / p.maxShield) * 100, 0, 100)}%`;
+        } else {
+          ui.shieldBarGroup.style.display = 'none';
+        }
+
+        const totalCd = p.baseDashCooldown * p.dashCooldownMult;
+        const dashPct = p.dashCooldown <= 0 ? 100 : ((totalCd - p.dashCooldown) / totalCd) * 100;
+        ui.dashFill.style.width = `${clamp(dashPct, 0, 100)}%`;
+        ui.dashText.textContent = p.dashCooldown <= 0 ? 'ГОТОВ' : `${p.dashCooldown.toFixed(1)}с`;
+
+        ui.sectorVal.textContent = String(state.sector).padStart(2, '0');
+        ui.enemiesVal.textContent = state.enemies.length;
+        ui.scoreVal.textContent = Math.floor(state.score);
+
+        // Полоса Босса
+        const boss = state.enemies.find(e => e.isBoss);
+        if (boss) {
+          ui.bossBarContainer.classList.add('visible');
+          ui.bossName.textContent = boss.name;
+          const pct = clamp((boss.hp / boss.maxHp) * 100, 0, 100);
+          ui.bossHpFill.style.width = `${pct}%`;
+          ui.bossHpText.textContent = `${Math.ceil(pct)}%`;
+        } else {
+          ui.bossBarContainer.classList.remove('visible');
+        }
+      }
+
+      function renderInstalledImplants() {
+        ui.implantsBar.innerHTML = '';
+        const p = state.player;
+        if (!p) return;
+
+        for (const [id, count] of Object.entries(p.implants)) {
+          const imp = IMPLANTS.find(i => i.id === id);
+          if (!imp) continue;
+          const rInfo = RARITY[imp.rarity];
+          const chip = document.createElement('div');
+          chip.className = 'implant-chip';
+          chip.style.borderColor = rInfo.color;
+          chip.title = `${imp.name} (x${count}): ${imp.desc}`;
+          chip.innerHTML = `${imp.icon}${count > 1 ? `<span class="stack-count">x${count}</span>` : ''}`;
+          ui.implantsBar.appendChild(chip);
+        }
+      }
+
+      /* ==========================================================================
+         12. ВЫБОР ИМПЛАНТОВ, СОСТОЯНИЯ ИГРЫ И POINTER LOCK
+         ========================================================================== */
+      function requestLock() {
+        try {
+          if (renderer && renderer.domElement && renderer.domElement.requestPointerLock) {
+            renderer.domElement.requestPointerLock();
+          }
+        } catch (_) {}
+      }
+
+      function releaseLock() {
+        try {
+          if (document.pointerLockElement && document.exitPointerLock) {
+            document.exitPointerLock();
+          }
+        } catch (_) {}
+      }
+
+      function pickRandomImplants(count = 3) {
+        const pool = [...IMPLANTS];
+        const chosen = [];
+        for (let i = 0; i < count && pool.length > 0; i++) {
+          const totalW = pool.reduce((s, item) => s + RARITY[item.rarity].weight, 0);
+          let roll = Math.random() * totalW;
+          let idx = 0;
+          for (let j = 0; j < pool.length; j++) {
+            roll -= RARITY[pool[j].rarity].weight;
+            if (roll <= 0) { idx = j; break; }
+          }
+          chosen.push(pool.splice(idx, 1)[0]);
+        }
+        return chosen;
+      }
+
+      function openImplantSelection() {
+        state.mode = 'implant';
+        input.mouseDown = false;
+        releaseLock();
+        ui.crosshair.classList.remove('visible');
+
+        const choices = pickRandomImplants(3);
+        state.currentChoices = choices;
+        ui.implantsGrid.innerHTML = '';
+
+        choices.forEach((imp, index) => {
+          const rInfo = RARITY[imp.rarity];
+          const curr = state.player.implants[imp.id] || 0;
+          const card = document.createElement('div');
+          card.className = 'implant-card';
+          card.style.setProperty('--card-color', rInfo.color);
+          card.style.setProperty('--card-glow', rInfo.glow);
+          card.innerHTML = `
+            <div class="hotkey-badge">${index + 1}</div>
+            <div class="rarity-tag">${rInfo.label}${curr > 0 ? ` • УР. ${curr + 1}` : ''}</div>
+            <div class="implant-icon">${imp.icon}</div>
+            <div class="implant-name">${imp.name}</div>
+            <div class="implant-desc">${imp.desc}</div>
+            <div class="implant-cta">[ КЛИК ИЛИ КЛАВИША ${index + 1} ]</div>
+          `;
+          card.addEventListener('click', () => selectImplant(imp));
+          ui.implantsGrid.appendChild(card);
+        });
+
+        ui.implantOverlay.classList.add('active');
+      }
+
+      function selectImplant(imp) {
+        if (state.mode !== 'implant' || !imp) return;
+        audio.implantSelect();
+        imp.apply(state.player);
+        state.player.implants[imp.id] = (state.player.implants[imp.id] || 0) + 1;
+        state.currentChoices = [];
+        renderInstalledImplants();
+
+        ui.implantOverlay.classList.remove('active');
+        state.sector += 1;
+        state.score += 300;
+        saveRecords();
+        generateSector(state.sector);
+
+        state.mode = 'playing';
+        ui.crosshair.classList.add('visible');
+        requestLock();
+      }
+
+      function startNewGame() {
+        audio.init();
+        state.sector = 1;
+        state.score = 0;
+        state.kills = 0;
+        state.damageFlash = 0;
+        state.cameraShake = 0;
+        ui.damageVignette.style.opacity = '0';
+        ui.speedLines.style.opacity = '0';
+
+        state.player = createPlayer();
+        renderInstalledImplants();
+        generateSector(1);
+
+        ui.startOverlay.classList.remove('active');
+        ui.pauseOverlay.classList.remove('active');
+        ui.gameOverOverlay.classList.remove('active');
+        ui.implantOverlay.classList.remove('active');
+        ui.hud.classList.remove('hidden');
+        ui.crosshair.classList.add('visible');
+
+        state.mode = 'playing';
+        updateHUD();
+        requestLock();
+      }
+
+      function pauseGame() {
+        if (state.mode !== 'playing') return;
+        state.mode = 'paused';
+        input.mouseDown = false;
+        releaseLock();
+        ui.crosshair.classList.remove('visible');
+        ui.pauseOverlay.classList.add('active');
+      }
+
+      function resumeGame() {
+        if (state.mode !== 'paused') return;
+        state.mode = 'playing';
+        ui.pauseOverlay.classList.remove('active');
+        ui.crosshair.classList.add('visible');
+        requestLock();
+      }
+
+      function triggerGameOver() {
+        state.mode = 'gameover';
+        input.mouseDown = false;
+        releaseLock();
+        ui.crosshair.classList.remove('visible');
+        saveRecords();
+
+        ui.goSectors.textContent = Math.max(0, state.sector - 1);
+        ui.goKills.textContent = state.kills;
+        ui.goScore.textContent = Math.floor(state.score);
+        ui.goBest.textContent = state.records.bestScore;
+        ui.gameOverOverlay.classList.add('active');
+      }
+
+      function syncMuteUI() {
+        const label = audio.muted ? '🔇 ЗВУК: ВЫКЛ' : '🔊 ЗВУК: ВКЛ';
+        ui.startMuteBtn.textContent = label;
+        ui.pauseMuteBtn.textContent = label;
+      }
+
+      function toggleMute() {
+        audio.init();
+        audio.toggleMute();
+        syncMuteUI();
+        if (state.mode === 'playing') {
+          showBanner(audio.muted ? '🔇 ЗВУК ОТКЛЮЧЁН' : '🔊 ЗВУК ВКЛЮЧЁН', '#00f3ff', 1.4);
+        }
+      }
+
+      /* ==========================================================================
+         13. ОБРАБОТЧИКИ ВВОДА (POINTER LOCK, КЛАВИАТУРА, МЫШЬ, РЕСАЙЗ)
+         ========================================================================== */
+      document.addEventListener('pointerlockchange', () => {
+        const locked = document.pointerLockElement === renderer.domElement;
+        input.pointerLocked = locked;
+        ui.lockHint.textContent = locked
+          ? 'ESC — ПАУЗА • SHIFT/ПРОБЕЛ — РЫВОК • M — ЗВУК'
+          : 'КЛИК ПО ЭКРАНУ — ЗАХВАТ МЫШИ • ← → ПОВОРОТ • M — ЗВУК';
+
+        // Если пользователь нажал ESC во время игры и снял Pointer Lock — открываем паузу
+        if (!locked && state.mode === 'playing') {
+          pauseGame();
+        }
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (state.mode !== 'playing' || !state.player) return;
+        const sens = 0.0022;
+        if (input.pointerLocked) {
+          state.player.yaw -= e.movementX * sens;
+          state.player.pitch = clamp(state.player.pitch - e.movementY * sens, -1.35, 1.35);
+        } else if (input.draggingLook) {
+          const dx = e.clientX - input.lastMouseX;
+          const dy = e.clientY - input.lastMouseY;
+          input.lastMouseX = e.clientX;
+          input.lastMouseY = e.clientY;
+          state.player.yaw -= dx * sens * 1.4;
+          state.player.pitch = clamp(state.player.pitch - dy * sens * 1.4, -1.35, 1.35);
+        }
+      });
+
+      window.addEventListener('mousedown', (e) => {
+        if (state.mode !== 'playing') return;
+        if (e.button === 0) {
+          audio.init();
+          if (!input.pointerLocked) {
+            requestLock();
+            input.draggingLook = true;
+            input.lastMouseX = e.clientX;
+            input.lastMouseY = e.clientY;
+          }
+          input.mouseDown = true;
+        }
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          input.mouseDown = false;
+          input.draggingLook = false;
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        input.keys[e.code] = true;
+
+        // Выбор импланта клавишами 1, 2, 3
+        if (state.mode === 'implant') {
+          if (e.code === 'Digit1' && state.currentChoices[0]) selectImplant(state.currentChoices[0]);
+          if (e.code === 'Digit2' && state.currentChoices[1]) selectImplant(state.currentChoices[1]);
+          if (e.code === 'Digit3' && state.currentChoices[2]) selectImplant(state.currentChoices[2]);
+          return;
+        }
+
+        // Звук на клавишу M
+        if (e.code === 'KeyM') {
+          toggleMute();
+          return;
+        }
+
+        // Рывок на Shift или Пробел
+        if ((e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') && state.mode === 'playing') {
+          e.preventDefault();
+          triggerDash();
+        }
+
+        // Пауза на ESC или P
+        if (e.code === 'Escape' || e.code === 'KeyP') {
+          if (state.mode === 'playing') pauseGame();
+          else if (state.mode === 'paused') resumeGame();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        input.keys[e.code] = false;
+      });
+
+      window.addEventListener('blur', () => {
+        input.keys = {};
+        input.mouseDown = false;
+        input.draggingLook = false;
+      });
+
+      window.addEventListener('resize', () => {
+        if (!camera || !renderer) return;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // Кнопки интерфейса
+      document.getElementById('startBtn').addEventListener('click', startNewGame);
+      document.getElementById('restartBtn').addEventListener('click', startNewGame);
+      document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+      document.getElementById('pauseRestartBtn').addEventListener('click', startNewGame);
+      ui.startMuteBtn.addEventListener('click', toggleMute);
+      ui.pauseMuteBtn.addEventListener('click', toggleMute);
+
+      /* ==========================================================================
+         14. ГЛАВНЫЙ ЦИКЛ РЕНДЕРИНГА
+         ========================================================================== */
+      let lastTime = 0;
+      function animate(timestamp) {
+        requestAnimationFrame(animate);
+        const dt = Math.min((timestamp - lastTime) / 1000 || 0.016, 0.05);
+        lastTime = timestamp;
+
+        update(dt);
+        renderer.render(scene, camera);
+      }
+
+      window.onload = function () {
+        initThree();
+        loadRecords();
+        syncMuteUI();
+        lastTime = performance.now();
+        requestAnimationFrame(animate);
+      };
+    })();
+  </script>
+</body>
+</html>
